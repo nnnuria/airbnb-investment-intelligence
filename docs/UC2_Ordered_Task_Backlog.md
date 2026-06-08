@@ -19,14 +19,14 @@ Legend: ★ = on the UC2 critical path · ☆ = stretch / later use case.
 ---
 
 ## Phase 0 — Project setup
-1. Create the GitHub repo; agree folder structure (`data/ src/ models/ api/ agents/ app/ tests/ notebooks/`), branch strategy, and a `requirements.txt`/`pyproject` + virtual env.
+~~1. Create the GitHub repo; agree folder structure (`data/ src/ models/ api/ agents/ app/ tests/ notebooks/`), branch strategy, and a `requirements.txt`/`pyproject` + virtual env.~~
 2. ★ Lock the **UC2 demo script** in one paragraph — the exact story you'll tell on 25 June. Build backwards from it.
 3. Add a minimal **GitHub Actions** workflow that just runs `pytest` on push (green from day 1; fill in tests as you go).
 4. ★ Write `data/schema.md` — the agreed column names/types every track codes against. This is the contract; agree it before anyone writes models.
 5. Set up a shared task board (GitHub Projects/Trello) reflecting these phases.
 
 ## Phase 1 — Data acquisition
-6. ★ Download Inside Airbnb **detailed** files for **Madrid first** (`listings.csv.gz`, `calendar.csv.gz`, `reviews.csv.gz`, `neighbourhoods.geojson`, `neighbourhoods.csv`), then Barcelona and Málaga.
+~~6. ★ Download Inside Airbnb **detailed** files for **Madrid first** (`listings.csv.gz`, `calendar.csv.gz`, `reviews.csv.gz`, `neighbourhoods.geojson`, `neighbourhoods.csv`), then Barcelona and Málaga.~~
 7. ★ **Acquire external market data (now critical path, because UC2):**
    - Sale **price per m²** by district (Madrid City Council open data / published index).
    - **Long-term rent index** by district (INE / regional reference index / Idealista index).
@@ -34,7 +34,7 @@ Legend: ★ = on the UC2 critical path · ☆ = stretch / later use case.
 8. ☆ Begin collecting the **regulatory corpus** (official municipal STR rules per city) for the later Regulatory agent. Lower priority for UC2 but start the folder.
 
 ## Phase 2 — Data engineering (the unblocker)
-9. ★ Build the **cleaning pipeline** (generalise the existing Madrid EDA logic into functions): dollar-string→float price; `t`/`f`→bool; bathrooms-text standardisation; dates→datetime; hierarchical neighbourhood-level **price imputation**; IQR/percentile outlier capping; drop the known bad rows (`beds=40`, `bedrooms=25`).
+~~9. ★ Build the **cleaning pipeline** (generalise the existing Madrid EDA logic into functions): dollar-string→float price; `t`/`f`→bool; bathrooms-text standardisation; dates→datetime; hierarchical neighbourhood-level **price imputation**; IQR/percentile outlier capping; drop the known bad rows (`beds=40`, `bedrooms=25`).~~
 10. ★ **Feature engineering:** amenity count + key amenity dummies (dishwasher, AC, washer, parking, pool, lift…), `host_tenure_days`, `reviews_per_month`, price-per-person, neighbourhood aggregates, calendar-derived seasonality features.
 11. ★ Build the **occupancy estimator** (San Francisco model) as a documented function:
     `bookings/mo ≈ (reviews_per_month / review_rate) × avg_length_of_stay`; convert to occupancy, cap at a realistic ceiling. Write the assumptions in a docstring.
@@ -44,7 +44,7 @@ Legend: ★ = on the UC2 critical path · ☆ = stretch / later use case.
 15. Add **data-validation tests** (schema match, value ranges, null thresholds) and wire them into CI.
 
 ## Phase 3 — Exploratory analysis
-16. Extend the EDA notebook to **all three cities** via the loader; refactor plots into reusable helpers the UI can call later.
+~~16. Extend the EDA notebook to **all three cities** via the loader; refactor plots into reusable helpers the UI can call later.~~
 17. Add a **cross-city comparison** section (price levels, room-type mix, regulatory intensity) — a slide-worthy insight on its own.
 18. ★ **UC2-specific EDA:** distributions of gross yield, Airbnb-revenue vs long-term-rent vs sale-value ratios by district; identify where Airbnb beats long-term and where it doesn't. This *is* the UC2 narrative.
 
