@@ -1,8 +1,16 @@
+# Notebooks
+notebooks/Madrid EDA and Analysis.ipynb
+
 # Python
 __pycache__/
+.pytest_cache/
 *.py[cod]
 *.egg-info/
 .venv/
+3.11/
+\#/
+uses/
+now/
 .ipynb_checkpoints/
 
 # Secrets

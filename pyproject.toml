@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "airbnb-iip"
 version = "0.1.0"
 description = "Airbnb Investment Intelligence Platform — IE x KPMG Capstone 2026"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 dependencies = []          # runtime deps are pinned in requirements.txt
 
 [tool.setuptools.packages.find]
