@@ -62,6 +62,7 @@ Full diagram: [`docs/architecture.svg`](docs/architecture.svg).
 
 ```
 src/airbnb_iip/   installable package — all reusable logic
+  config.py       project settings: paths, finance & occupancy assumptions
   data/           loader · clean · abt (build_abt)
   features/       engineering · occupancy (SF model) · selection (VIF/RFE)
   models/         price · demand · segmentation · nlp
@@ -71,7 +72,6 @@ api/              FastAPI model services
 app/              Streamlit application
 scripts/          download_data · build_abts · train_all
 notebooks/        exploration only (logic belongs in src/)
-config/           config.yaml — paths, cost & occupancy assumptions
 data/             raw · interim · processed · external · regulatory · sample  (mostly gitignored)
 docs/             schema.md (data contract) · model_cards · architecture.svg
 tests/            pytest suite
