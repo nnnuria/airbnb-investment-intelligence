@@ -1,0 +1,25 @@
+paths:
+  raw: data/raw
+  interim: data/interim
+  processed: data/processed
+  external: data/external
+  regulatory: data/regulatory
+
+cities: [madrid, barcelona, malaga]
+snapshot_date: "2025-09-14"
+
+occupancy:                  # San Francisco model assumptions
+  review_rate: 0.50         # fraction of stays that leave a review
+  avg_length_of_stay: 3     # nights; tune per city
+  max_occupancy: 0.70       # realistic ceiling
+
+finance:                    # editable + auditable (governance)
+  cleaning_fee_per_stay_eur: 45
+  management_pct: 0.20      # share of gross Airbnb revenue
+  platform_fee_pct: 0.03
+  vacancy_buffer_pct: 0.05
+  long_term_mgmt_pct: 0.08
+  income_tax_pct: 0.19
+
+seeds:
+  random_state: 42

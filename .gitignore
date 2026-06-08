@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.ipynb_checkpoints/
+
+# Secrets
+.env
+
+# Large / private data (folder structure is recreated per machine)
+data/raw/
+data/interim/
+data/processed/
+
+# MLflow local store
+mlruns/
+mlartifacts/
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+
+# 
+*.egg-info/

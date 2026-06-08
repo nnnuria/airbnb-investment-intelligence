@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "airbnb-iip"
+version = "0.1.0"
+description = "Airbnb Investment Intelligence Platform — IE x KPMG Capstone 2026"
+requires-python = ">=3.11"
+dependencies = []          # runtime deps are pinned in requirements.txt
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

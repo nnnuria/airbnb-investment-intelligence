@@ -1,0 +1,37 @@
+# Core data / ML
+pandas
+numpy
+scikit-learn
+geopandas
+xgboost
+lightgbm
+shap
+mlxtend
+prophet
+statsmodels
+
+# NLP
+nltk
+spacy
+
+# AI layer
+langgraph
+langchain
+faiss-cpu
+sentence-transformers
+openai
+
+# MLOps
+mlflow
+fastapi
+uvicorn[standard]
+evidently
+
+# UI
+streamlit
+plotly
+
+# utils
+pyyaml
+python-dotenv
+pyarrow
