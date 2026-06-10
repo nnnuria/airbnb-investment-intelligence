@@ -37,7 +37,7 @@ and `src/airbnb_iip/models/nlp.py`.
   framing. Madrid and Barcelona have a larger private-room segment (~33–38%).
 - **✅ Barcelona pricing RESOLVED.** The original BCN snapshot (14 Dec 2025) had an empty price
   column in both calendar and listings. Replaced with a different Inside Airbnb BCN snapshot
-  Replaced with a different Inside Airbnb BCN snapshot where price is ~79% populated (median €143)** — same source, real
+  (12 Jun 2025) where price is ~79% populated (median €143) — same source, real
   observed prices, no imputation needed. Reviews came with it (973K, 100% comment coverage, 100%
   listing overlap). All three cities now have usable pricing.
 
@@ -72,7 +72,7 @@ validation metric. Natural v2 upgrade: a multilingual transformer benchmarked ag
 
 ## Recommendations (what to do with this)
 
-1. **Lead the build with Madrid.** It's the tightest market (46% availability vs 57% elsewhere)
+1. **Lead the build with Madrid.** Madrid has the lowest availability (highest demand)
    *and* the deepest data (25k listings, 1.3M reviews, price populated). It's the strongest city to
    demonstrate the occupancy-driven investment case on — prioritise it for the first end-to-end UC2
    slice and the KPMG demo.
