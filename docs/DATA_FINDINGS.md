@@ -17,8 +17,7 @@ and `src/airbnb_iip/models/nlp.py`.
 | Barcelona | 18,177 | 14 Dec 2025 → 14 Dec 2026 | 57% | empty |
 | Málaga    |  9,714 | 30 Sep 2025 → 29 Sep 2026 | 57% | empty |
 
-- **Availability** is fully populated and usable — it's the occupancy/seasonality signal. Madrid is
-  the tightest market (46% available = highest booked share).
+- **Availability** is fully populated and usable — it's the occupancy/seasonality signal. Madrid has the lowest availability (46% available = highest booked share).
 - **⚠️ `price` is 100% empty in every calendar** (~19M rows). Expected Inside Airbnb behaviour, not a
   download error. Nightly price must come from `listings.csv`. (Consistent with the SF occupancy
   model, which already infers bookings from review frequency rather than calendar price.)
@@ -31,14 +30,16 @@ and `src/airbnb_iip/models/nlp.py`.
 | City | Listings | Median nightly price | Price coverage | Entire-home share |
 |------|---------:|---------------------:|----------------|-------------------|
 | Madrid    | 25,000 | €110 | ~76% ✅ | 67% |
-| Barcelona | 18,177 | — | **0% ⚠️** | 65% |
+| Barcelona | 18,927 | €143 | ~79% ✅ | 62% |
 | Málaga    |  9,714 | €102 | ~91% ✅ | 88% |
 
 - Málaga is the most "whole-property" market (88% entire homes) — relevant for UC2's sell-vs-rent
-  framing. Madrid and Barcelona have a larger private-room segment (~32–34%).
-- **⚠️ Barcelona has no price anywhere** — empty in both calendar and listings. Open team decision
-  before price-dependent UC2 work on BCN: alternate snapshot · impute from comparables / external
-  €-per-m² · or de-scope BCN for price-dependent outputs (keep availability + sentiment).
+  framing. Madrid and Barcelona have a larger private-room segment (~33–38%).
+- **✅ Barcelona pricing RESOLVED.** The original BCN snapshot (14 Dec 2025) had an empty price
+  column in both calendar and listings. Replaced with a different Inside Airbnb BCN snapshot
+  (`<<FILL IN SNAPSHOT DATE>>`) where price is **~79% populated (median €143)** — same source, real
+  observed prices, no imputation needed. Reviews came with it (973K, 100% comment coverage, 100%
+  listing overlap). All three cities now have usable pricing.
 
 ## Section 3 — Sentiment (review analysis, UC3)
 
@@ -71,7 +72,7 @@ validation metric. Natural v2 upgrade: a multilingual transformer benchmarked ag
 
 ## Recommendations (what to do with this)
 
-1. **Lead the build with Madrid.** It has the lowest availability (highest demand), the deepest data coverage (25k listings, 1.3M reviews), and populated pricing data.
+1. **Lead the build with Madrid.** It's the tightest market (46% availability vs 57% elsewhere)
    *and* the deepest data (25k listings, 1.3M reviews, price populated). It's the strongest city to
    demonstrate the occupancy-driven investment case on — prioritise it for the first end-to-end UC2
    slice and the KPMG demo.
@@ -79,9 +80,9 @@ validation metric. Natural v2 upgrade: a multilingual transformer benchmarked ag
    sparse and clustered near 5.0★, so they carry little discriminating signal; the per-listing
    sentiment score varies independently and can separate listings the ratings can't. Merge
    `data/processed/<city>_sentiment.parquet` on `listing_id` and let the model weigh it directly.
-3. **Resolve Barcelona pricing before any price-based recommendation includes BCN.** Until then,
-   scope BCN to availability + sentiment outputs only, so no price-dependent number ships on data we
-   don't have. Recommended path: source an alternate Inside Airbnb BCN snapshot with price populated.
+3. **Barcelona pricing is resolved — proceed with BCN in price-based outputs.** The empty-price
+   issue was specific to the 14 Dec 2025 snapshot; a different Inside Airbnb BCN snapshot has price
+   ~79% populated. Use that snapshot for all BCN price work. No imputation or de-scoping needed.
 4. **Re-pull all three cities at one snapshot date** if cross-city seasonality comparison matters
    for the deliverable — the current snapshots start months apart, which makes month-vs-month
    demand comparisons unreliable.
@@ -90,6 +91,6 @@ validation metric. Natural v2 upgrade: a multilingual transformer benchmarked ag
 
 - ✅ **Availability + seasonality** ready for occupancy modelling (all 3 cities).
 - ✅ **Sentiment feature** ready to merge into the ABT (all 3 cities).
-- ⚠️ **Barcelona price** — needs a team decision before BCN price-dependent UC2 work.
+- ✅ **Barcelona price** — RESOLVED via a replacement snapshot (~79% coverage). All cities priced.
 - ⚠️ **Snapshot alignment** — confirm whether to re-pull all cities at one date for clean
   cross-city seasonality.
