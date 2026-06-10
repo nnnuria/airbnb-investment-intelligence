@@ -30,5 +30,12 @@ mlartifacts/
 .vscode/
 .idea/
 
-# 
+#
 *.egg-info/
+
+# Idealista EDA contribution (raw CSVs are recreated per machine; model is kept)
+notebooks/idealista/.ipynb_checkpoints/
+docs/idealista/**/*.tmp
+**/data/raw/
+**/data/interim/
+**/data/processed/

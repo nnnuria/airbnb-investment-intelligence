@@ -1,0 +1,59 @@
+{
+  "ridge": {
+    "cv_MAE_eur": 455.6,
+    "cv_MAE_std": 31.3,
+    "test": {
+      "overall": {
+        "MAE_eur": 497.5,
+        "RMSE_eur": 867.5,
+        "MAPE_pct": 23.2,
+        "R2": 0.52
+      },
+      "Madrid": {
+        "MAE_eur": 422.3,
+        "RMSE_eur": 805.4,
+        "MAPE_pct": 21.5,
+        "R2": 0.42
+      },
+      "Barcelona": {
+        "MAE_eur": 574.3,
+        "RMSE_eur": 926.5,
+        "MAPE_pct": 24.9,
+        "R2": 0.548
+      }
+    }
+  },
+  "xgboost": {
+    "cv_MAE_eur": 421.5,
+    "cv_MAE_std": 15.9,
+    "test": {
+      "overall": {
+        "MAE_eur": 443.3,
+        "RMSE_eur": 755.4,
+        "MAPE_pct": 20.4,
+        "R2": 0.636
+      },
+      "Madrid": {
+        "MAE_eur": 335.7,
+        "RMSE_eur": 555.2,
+        "MAPE_pct": 17.8,
+        "R2": 0.724
+      },
+      "Barcelona": {
+        "MAE_eur": 552.9,
+        "RMSE_eur": 915.4,
+        "MAPE_pct": 23.0,
+        "R2": 0.558
+      }
+    }
+  },
+  "best_model": "xgboost",
+  "permutation_importance": {
+    "sq_m": 468.05,
+    "neighborhood": 138.27,
+    "property_type": 11.17,
+    "municipality": 6.5,
+    "n_rooms": 1.96,
+    "city": 1.9
+  }
+}
