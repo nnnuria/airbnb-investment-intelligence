@@ -89,12 +89,16 @@ def add_temporal_features(
     """
     df = df.copy()
     ref = df[reference_col] if reference_col in df.columns else pd.to_datetime("today")
+
     if "host_since" in df.columns:
         df["host_tenure_years"] = (ref - df["host_since"]).dt.days / 365.25
+
     if "first_review" in df.columns:
         df["days_since_first_review"] = (ref - df["first_review"]).dt.days
+
     if "last_review" in df.columns:
         df["days_since_last_review"] = (ref - df["last_review"]).dt.days
+
     if "first_review" in df.columns and "last_review" in df.columns:
         df["review_span_years"] = (
             (df["last_review"] - df["first_review"]).dt.days / 365.25
@@ -104,6 +108,8 @@ def add_temporal_features(
 
 # ── Deduplication ─────────────────────────────────────────────────────────────
 
+
+# in the notebook it shows there are none
 def drop_true_duplicates(
     df: pd.DataFrame, id_cols: list = None
 ) -> pd.DataFrame:
@@ -120,7 +126,8 @@ def drop_true_duplicates(
 # ── Columns to drop ───────────────────────────────────────────────────────────
 
 _REDUNDANT_COLS = [
-    "listing_url", "picture_url", "host_url",
+    #"picture_url",
+    "listing_url", "host_url",
     "host_thumbnail_url", "host_picture_url",
     "host_neighbourhood", "host_listings_count",
     "host_total_listings_count",
@@ -170,6 +177,7 @@ def impute_host_fields(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns:
             df[col] = df[col].fillna("Unknown")
 
+    # check this
     for col in ["host_acceptance_rate", "host_response_rate", "host_response_time"]:
         if col in df.columns:
             df[col] = df[col].fillna(0)
