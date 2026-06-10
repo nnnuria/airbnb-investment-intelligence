@@ -37,7 +37,7 @@ and `src/airbnb_iip/models/nlp.py`.
   framing. Madrid and Barcelona have a larger private-room segment (~33–38%).
 - **✅ Barcelona pricing RESOLVED.** The original BCN snapshot (14 Dec 2025) had an empty price
   column in both calendar and listings. Replaced with a different Inside Airbnb BCN snapshot
-  (`<<FILL IN SNAPSHOT DATE>>`) where price is **~79% populated (median €143)** — same source, real
+  Replaced with a different Inside Airbnb BCN snapshot where price is ~79% populated (median €143)** — same source, real
   observed prices, no imputation needed. Reviews came with it (973K, 100% comment coverage, 100%
   listing overlap). All three cities now have usable pricing.
 
