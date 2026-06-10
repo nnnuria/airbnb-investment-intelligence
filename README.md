@@ -150,6 +150,80 @@ not a single point estimate.
 
 ---
 
+## Idealista scraper (data-collection agent)
+
+A scraper agent collects Idealista apartment listings for Madrid, Barcelona, and Málaga, in
+both **sale (venta)** and **rent (alquiler)** flavours, via the
+[`igolaizola/idealista-scraper`](https://apify.com/igolaizola/idealista-scraper) Apify actor.
+It calls the Apify HTTP API programmatically (no Apify CLI required), streams the dataset
+to disk as JSON Lines, and tags each record with `_city` / `_operation` / `_scraped_at` for
+downstream joins.
+
+**Setup.** Add your Apify token to `.env` (gitignored; template in `.env.example`):
+
+```bash
+APIFY_API_TOKEN=apify_api_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+The token is read from the environment — it is never hardcoded or accepted on the command line.
+
+**Run.**
+
+```bash
+# All six (city × operation) jobs with defaults (cap = 2,500 per job)
+python scripts/scrape_idealista.py
+
+# A single slice
+python scripts/scrape_idealista.py --cities madrid --operations rent
+
+# Push past Idealista's ~1,800-per-query cap — triggers the actor's
+# sub-location splitting (slower; ordering changes).
+python scripts/scrape_idealista.py --max-items 5000
+```
+
+**Outputs.** One JSONL file per (city, operation), under
+`data/raw/idealista/<city>/<operation>_<YYYY-MM-DD>.jsonl` (git-ignored).
+Example layout after a full run on 2026-06-10:
+
+```
+data/raw/idealista/
+├── madrid/
+│   ├── sale_2026-06-10.jsonl
+│   └── rent_2026-06-10.jsonl
+├── barcelona/
+│   ├── sale_2026-06-10.jsonl
+│   └── rent_2026-06-10.jsonl
+└── malaga/
+    ├── sale_2026-06-10.jsonl
+    └── rent_2026-06-10.jsonl
+```
+
+**What's in each record.** Per-listing fields include identifiers (`propertyCode`, `url`),
+pricing (`price`, `pricePerM2`), size and layout (`size`, `rooms`, `bathrooms`),
+type (`propertyType`, `homeType`, `floor`), location (`address`, `district`,
+`neighborhood`, `municipality`, `province`, `latitude`, `longitude`), narrative
+(`title`, `description`), media (`images`, `virtualTour`), amenity tags (`features`),
+and advertiser info (`agency`, `phone`). Full canonical schema in
+[`docs/idealista_schema.md`](docs/idealista_schema.md); a synthetic three-record
+sample lives at [`Data/sample/idealista_sample.jsonl`](Data/sample/idealista_sample.jsonl).
+
+**Loading into pandas.**
+
+```python
+from airbnb_iip.data.scrapers.idealista import load_jsonl_as_dataframe
+
+df = load_jsonl_as_dataframe("data/raw/idealista/madrid/sale_2026-06-10.jsonl")
+# canonical snake_case columns: listing_id, price_eur, size_m2, latitude, …
+```
+
+**Limits and cost.** Idealista shows ~1,800 results per search query; the actor caps a
+single job at this naturally. Set `--max-items` above 2,500 to trigger the actor's
+automatic sub-location splitting and go beyond the cap (slower; ordering changes).
+The actor itself is a paid Apify actor — check pricing on its store page before large
+runs and start with a small `--max-items` to verify behaviour.
+
+---
+
 ## Master-technique coverage
 
 The project deliberately exercises the full master curriculum: feature engineering & ABT design,
