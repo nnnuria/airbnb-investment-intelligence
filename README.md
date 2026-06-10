@@ -150,6 +150,22 @@ not a single point estimate.
 
 ---
 
+## Data status & findings
+
+First-round data validation is complete across Madrid, Barcelona, and Málaga.
+
+Headlines:
+
+- **Calendar** is usable for availability, occupancy, and seasonality, but calendar `price` is empty in all three cities, so nightly price comes from `listings.csv`.
+- **Madrid** is the strongest city for the first UC2 prototype because it has low availability (= higher demand), rich data coverage, and populated pricing.
+- **Barcelona pricing is resolved** using a replacement BCN snapshot with ~79% price coverage.
+- **Sentiment analysis** is working and produces a per-listing feature ready to join into the ABT for the investment model.
+
+Full findings:
+[`docs/DATA_FINDINGS.md`](docs/DATA_FINDINGS.md)
+
+---
+
 ## Master-technique coverage
 
 The project deliberately exercises the full master curriculum: feature engineering & ABT design,
