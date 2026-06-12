@@ -97,6 +97,18 @@ class ScrapeJob:
 
 # ── Scraper agent ─────────────────────────────────────────────────────────────
 
+def _run_field(run: Any, dict_key: str, attr: str) -> Any:
+    """Read one field from an Apify actor-run result.
+
+    apify-client < 2 returns the run as a plain dict with camelCase keys
+    (``run["defaultDatasetId"]``); apify-client >= 3 returns a typed model
+    with snake_case attributes (``run.default_dataset_id``). Support both.
+    """
+    if isinstance(run, dict):
+        return run.get(dict_key)
+    return getattr(run, attr, None)
+
+
 class IdealistaScraper:
     """Drive the Idealista Apify actor and stream results to disk."""
 
@@ -145,12 +157,13 @@ class IdealistaScraper:
             )
             raise
 
-        if not run or "defaultDatasetId" not in run:
+        dataset_id = _run_field(run, "defaultDatasetId", "default_dataset_id")
+        if not run or not dataset_id:
             raise RuntimeError(
                 f"Actor run returned no defaultDatasetId. Run object: {run!r}"
             )
 
-        status = run.get("status")
+        status = _run_field(run, "status", "status")
         if status and status != "SUCCEEDED":
             logger.warning(
                 "Actor run finished with status=%s for city=%s operation=%s — "
@@ -158,7 +171,7 @@ class IdealistaScraper:
                 status, job.city, job.operation,
             )
 
-        n_items = self._write_dataset(run["defaultDatasetId"], out_path, job)
+        n_items = self._write_dataset(dataset_id, out_path, job)
         logger.info(
             "Wrote %d listings to %s (status=%s)",
             n_items, out_path, status or "unknown",
