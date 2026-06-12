@@ -21,6 +21,10 @@ statsmodels>=0.14
 # tqdm>=4.66
 # wordcloud>=1.9
 
+# ── Data collection (Idealista scraper via Apify) ─────────────────────────────
+apify-client>=1.7
+python-dotenv>=1.0
+
 # ── Notebook runtime ──────────────────────────────────────────────────────────
 #jupyter>=1.1
 #ipykernel>=6.29
