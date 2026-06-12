@@ -60,6 +60,10 @@ def parse_bathrooms(df: pd.DataFrame) -> pd.DataFrame:
             .str.extract(r"(^\d*\.?\d+)")[0]
             .astype(float)
         )
+        # Parse non-digit half baths (e.g., 'half-bath', 'shared half-bath') as 0.5
+        half_mask = df["bathrooms_text"].str.lower().str.contains("half", na=False)
+        df.loc[half_mask, "bathrooms_number"] = df.loc[half_mask, "bathrooms_number"].fillna(0.5)
+
         df["bathrooms_description"] = (
             df["bathrooms_text"]
             .str.replace(r"^\d*\.?\d+\s*", "", regex=True)
@@ -89,21 +93,41 @@ def add_temporal_features(
     """
     df = df.copy()
     ref = df[reference_col] if reference_col in df.columns else pd.to_datetime("today")
+
     if "host_since" in df.columns:
         df["host_tenure_years"] = (ref - df["host_since"]).dt.days / 365.25
+
+    # If review dates are missing or filled with the sentinel date 1800-01-01, set temporal metrics to NaN
+    sentinel = pd.Timestamp("1800-01-01")
+
     if "first_review" in df.columns:
+        mask = (df["first_review"] == sentinel) | df["first_review"].isna()
         df["days_since_first_review"] = (ref - df["first_review"]).dt.days
+        df.loc[mask, "days_since_first_review"] = np.nan
+
     if "last_review" in df.columns:
+        mask = (df["last_review"] == sentinel) | df["last_review"].isna()
         df["days_since_last_review"] = (ref - df["last_review"]).dt.days
+        df.loc[mask, "days_since_last_review"] = np.nan
+
     if "first_review" in df.columns and "last_review" in df.columns:
+        mask = (
+            (df["first_review"] == sentinel) | 
+            (df["last_review"] == sentinel) | 
+            df["first_review"].isna() | 
+            df["last_review"].isna()
+        )
         df["review_span_years"] = (
             (df["last_review"] - df["first_review"]).dt.days / 365.25
         )
+        df.loc[mask, "review_span_years"] = np.nan
     return df
 
 
 # ── Deduplication ─────────────────────────────────────────────────────────────
 
+
+# in the notebook it shows there are none
 def drop_true_duplicates(
     df: pd.DataFrame, id_cols: list = None
 ) -> pd.DataFrame:
@@ -120,7 +144,8 @@ def drop_true_duplicates(
 # ── Columns to drop ───────────────────────────────────────────────────────────
 
 _REDUNDANT_COLS = [
-    "listing_url", "picture_url", "host_url",
+    #"picture_url",
+    "listing_url", "host_url",
     "host_thumbnail_url", "host_picture_url",
     "host_neighbourhood", "host_listings_count",
     "host_total_listings_count",
@@ -165,52 +190,54 @@ def impute_host_fields(df: pd.DataFrame) -> pd.DataFrame:
             )
         )
 
+    # Impute categorical text columns including host_response_time as 'Unknown' (avoiding type pollution)
     for col in ["host_neighbourhood", "host_about", "host_location",
-                "neighborhood_overview", "license"]:
+                "neighborhood_overview", "license", "host_response_time"]:
         if col in df.columns:
             df[col] = df[col].fillna("Unknown")
 
-    for col in ["host_acceptance_rate", "host_response_rate", "host_response_time"]:
+    # Impute numeric rate columns as 0
+    for col in ["host_acceptance_rate", "host_response_rate"]:
         if col in df.columns:
-            df[col] = df[col].fillna(0)
+            df[col] = df[col].fillna(0.0)
 
     return df
 
 
 def impute_price(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Hierarchically impute missing price via group means:
-      1. (neighbourhood, property_type, room_type, accommodates)
-      2. (neighbourhood, property_type, room_type)
-      3. (neighbourhood,)
+    Price imputation commented out/disabled. Missing prices will be dropped.
     """
-    df = df.copy()
-    for groupby_cols in [
-        ["neighbourhood_cleansed", "property_type", "room_type", "accommodates"],
-        ["neighbourhood_cleansed", "property_type", "room_type"],
-        ["neighbourhood_cleansed"],
-    ]:
-        available = [c for c in groupby_cols if c in df.columns]
-        if len(available) == len(groupby_cols):
-            df["price"] = df["price"].fillna(
-                df.groupby(groupby_cols)["price"].transform("mean")
-            )
-        if df["price"].isna().sum() == 0:
-            break
     return df
 
 
 def impute_beds_bedrooms(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Impute missing values via the chain:
-      beds ← bedrooms ← accommodates
-    Then cast both to int.
+    Impute missing bedrooms and beds using room_type and accommodates-based medians.
     """
     df = df.copy()
-    if "bedrooms" in df.columns and "accommodates" in df.columns:
-        df["bedrooms"] = df["bedrooms"].fillna(df["accommodates"]).astype(int)
-    if "beds" in df.columns and "bedrooms" in df.columns:
-        df["beds"] = df["beds"].fillna(df["bedrooms"]).astype(int)
+    
+    # Impute bedrooms first
+    if "bedrooms" in df.columns and "room_type" in df.columns and "accommodates" in df.columns:
+        # Impute with median of (room_type, accommodates)
+        bedroom_medians = df.groupby(["room_type", "accommodates"])["bedrooms"].transform("median")
+        fallback_bedrooms = (df["accommodates"] // 2).clip(lower=1)
+        df["bedrooms"] = df["bedrooms"].fillna(bedroom_medians).fillna(fallback_bedrooms).round().astype(int)
+    elif "bedrooms" in df.columns:
+        # Mode fallback if other features are not present
+        mode_val = df["bedrooms"].mode()
+        df["bedrooms"] = df["bedrooms"].fillna(mode_val[0] if not mode_val.empty else 1).astype(int)
+        
+    # Impute beds next
+    if "beds" in df.columns and "room_type" in df.columns and "accommodates" in df.columns:
+        # Impute with median of (room_type, accommodates)
+        beds_medians = df.groupby(["room_type", "accommodates"])["beds"].transform("median")
+        fallback_beds = df["bedrooms"]
+        df["beds"] = df["beds"].fillna(beds_medians).fillna(fallback_beds).round().astype(int)
+    elif "beds" in df.columns:
+        # Mode/bedrooms fallback
+        df["beds"] = df["beds"].fillna(df["bedrooms"] if "bedrooms" in df.columns else 1).astype(int)
+        
     return df
 
 
@@ -224,10 +251,10 @@ _REVIEW_COLS = [
 
 
 def fill_review_zeros(df: pd.DataFrame) -> pd.DataFrame:
-    """Fill review-score / activity NaN with 0 (listing has no reviews yet)."""
+    """Fill review activity NaN (like reviews_per_month) with 0 for listings with no reviews."""
     df = df.copy()
-    cols = [c for c in _REVIEW_COLS if c in df.columns]
-    df[cols] = df[cols].fillna(0)
+    if "reviews_per_month" in df.columns:
+        df["reviews_per_month"] = df["reviews_per_month"].fillna(0.0)
     return df
 
 
@@ -360,18 +387,16 @@ def clean_listings(df: pd.DataFrame) -> pd.DataFrame:
       1.  Drop always-useless columns (calendar_updated, neighbourhood)
       2.  Drop exact duplicates (ignoring id / listing_url)
       3.  Parse dates
-      4.  Parse prices, rates, booleans
+      4.  Parse prices, rates, booleans, and drop listings with missing prices
       5.  Normalise host_name multi-host separator to '&'
       6.  Reconcile bathrooms fields
-      7.  Impute host fields, price, beds/bedrooms
-      8.  Fill review scores with 0 / dates with sentinel 1800-01-01
+      7.  Impute host fields, beds/bedrooms (price imputation is skipped)
+      8.  Fill review activity with 0 / dates with sentinel 1800-01-01
       9.  Add temporal features
       10. Add engineered features (property_type_std, rate_cat, price_cat,
           description_length)
       11. Drop URL / redundant columns
-
-    City-specific decisions (outlier cuts, extra column drops) should be
-    applied in the per-city EDA notebook *after* calling this function.
+      12. Filter price outliers (prices <= 0 or above 99.5th percentile)
     """
     df = df.copy()
 
@@ -389,6 +414,8 @@ def clean_listings(df: pd.DataFrame) -> pd.DataFrame:
     # 4. Type conversions
     if "price" in df.columns:
         df["price"] = parse_price(df["price"])
+        # Drop rows with missing prices immediately
+        df = df.dropna(subset=["price"])
     for col in ["host_response_rate", "host_acceptance_rate"]:
         if col in df.columns:
             df[col] = parse_rate(df[col])
@@ -405,7 +432,8 @@ def clean_listings(df: pd.DataFrame) -> pd.DataFrame:
 
     # 7. Imputation
     df = impute_host_fields(df)
-    df = impute_price(df)
+    # Price imputation is commented out as requested; missing prices are dropped instead.
+    # df = impute_price(df)
     df = impute_beds_bedrooms(df)
 
     # 8. Review sentinels / zeros
@@ -423,6 +451,11 @@ def clean_listings(df: pd.DataFrame) -> pd.DataFrame:
 
     # 11. Drop URL / redundant columns
     df = drop_url_cols(df)
+
+    # 12. Filter price outliers (prices <= 0 or above 99.5th percentile)
+    if "price" in df.columns:
+        q_upper = df["price"].quantile(0.995)
+        df = df[(df["price"] > 0) & (df["price"] <= q_upper)]
 
     return df
 
