@@ -425,7 +425,7 @@ def clean_listings(df: pd.DataFrame) -> pd.DataFrame:
 
     # 5. Normalise multi-host name separators to '&'
     if "host_name" in df.columns:
-        df["host_name"] = df["host_name"].str.replace(r" . ", " & ", regex=True)
+        df["host_name"] = df["host_name"].str.replace(" . ", " & ", regex=False)
 
     # 6. Bathrooms
     df = parse_bathrooms(df)

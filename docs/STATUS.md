@@ -31,7 +31,7 @@ Legend: ✅ Done · 🔄 In progress · ⬜ Not started
 ### Data engineering
 | Component | Status | Notes |
 |---|---|---|
-| Cleaning pipeline (`cleaning.py`) | ✅ | Price, baths, beds, imputation, outlier capping, deduplication |
+| Cleaning pipeline (`cleaning.py`) | ✅ | Price, baths, beds, imputation, outlier capping, deduplication; `host_name` regex bug fixed |
 | Feature engineering | 🔄 | Amenity dummies, host tenure, neighbourhood aggregates — partially in notebooks |
 | Occupancy estimator (SF model) | ⬜ | Defined in plan; not yet implemented as a function |
 | `build_abt(city)` — unified ABT | ⬜ | Cleaning done; full pipeline function not yet wired |
@@ -45,7 +45,7 @@ Legend: ✅ Done · 🔄 In progress · ⬜ Not started
 | Madrid EDA | ✅ | `notebooks/madrid/` — cleaning, analysis, sentiment |
 | Barcelona EDA | ✅ | `notebooks/barcelona/` — cleaning, analysis, sentiment |
 | Málaga EDA | ✅ | `notebooks/malaga/` — cleaning, analysis, sentiment |
-| Cross-city comparison | ⬜ | |
+| Cross-city comparison | ✅ | `notebooks/cross_city_comparison.ipynb` — 7 sections, city scorecard, investment atlas, radar chart |
 | Airbnb-vs-sell EDA (revenue vs. sale value by district) | ⬜ | The primary flow narrative |
 
 ### Modelling
@@ -110,6 +110,11 @@ Entries are newest-first. One bullet = one meaningful unit of work (PR, task, or
 Format: `**YYYY-MM-DD** — What changed (file or component) · who/branch if relevant`
 
 ---
+
+**2026-06-13** — Cross-city comparison notebook created and debugged
+- `notebooks/cross_city_comparison.ipynb` — 7-section notebook: market size, nightly rates, revenue & occupancy, top districts (investment atlas), competitive landscape, regulatory environment, city scorecard + radar chart
+- `src/airbnb_iip/data/cleaning.py` — fixed `host_name` regex bug (`regex=True` with unescaped `.` → `regex=False`; was silently replacing any ` X ` pattern)
+- Fixed notebook relative paths (`../../Data/interim/` → `../Data/interim/`) and adaptive district minimum threshold (city-scale `max(5, n//100)` replaces hard-coded `n >= 20` that excluded all Málaga districts)
 
 **2026-06-13** — Updated product framing across all docs to reflect two-flow structure
 - `README.md` — Repositioned as "Airbnb or sell?" + optimisation flow; updated use-case table, how-it-works diagram, data section, and disclaimer
