@@ -33,15 +33,16 @@ and `src/airbnb_iip/models/nlp.py`.
 | Barcelona | 18,927 | €143 | ~79% ✅ | 62% |
 | Málaga    |  9,714 | €102 | ~91% ✅ | 88% |
 
-- Málaga is the most "whole-property" market (88% entire homes) — relevant for UC2's sell-vs-rent
-  framing. Madrid and Barcelona have a larger private-room segment (~33–38%).
+- Málaga is the most "whole-property" market (88% entire homes) — most relevant for the
+  Airbnb-vs-sell decision framing, where entire-home listings have the clearest comparison to
+  a sale. Madrid and Barcelona have a larger private-room segment (~33–38%).
 - **✅ Barcelona pricing RESOLVED.** The original BCN snapshot (14 Dec 2025) had an empty price
   column in both calendar and listings. Replaced with a different Inside Airbnb BCN snapshot
   (12 Jun 2025) where price is ~79% populated (median €143) — same source, real
   observed prices, no imputation needed. Reviews came with it (973K, 100% comment coverage, 100%
   listing overlap). All three cities now have usable pricing.
 
-## Section 3 — Sentiment (review analysis, UC3)
+## Section 3 — Sentiment (review analysis, optimisation flow)
 
 Multilingual pipeline (handles EN + ES/FR/DE/IT/PT) → per-listing sentiment feature. 40k reviews
 scored per city for this summary; full run via `scripts/run_sentiment.py --full`.
@@ -61,7 +62,8 @@ scored per city for this summary; full run via `scripts/run_sentiment.py --full`
 
 **Output produced:** per-listing sentiment (`mean_sentiment`, `pct_positive`, `pct_negative`,
 `n_reviews`) in `data/processed/<city>_sentiment.parquet` — ready to join into the ABT as a
-**feature for the investment model** (UC2/UC3), keyed on `listing_id`.
+**feature for the revenue model** (primary flow) and as a **gap signal** in the optimisation
+flow's guest-experience recommendations, keyed on `listing_id`.
 
 **Honest caveat on the model:** the README-specified TF-IDF + Naïve Bayes is trained on
 lexicon-generated labels, so its high training accuracy (~0.94) reflects agreement with those weak
@@ -80,6 +82,8 @@ validation metric. Natural v2 upgrade: a multilingual transformer benchmarked ag
    sparse and clustered near 5.0★, so they carry little discriminating signal; the per-listing
    sentiment score varies independently and can separate listings the ratings can't. Merge
    `data/processed/<city>_sentiment.parquet` on `listing_id` and let the model weigh it directly.
+   In the optimisation flow, sentiment aspect scores (cleanliness, location, wifi, host) also
+   surface targeted improvement recommendations.
 3. **Barcelona pricing is resolved — proceed with BCN in price-based outputs.** The empty-price
    issue was specific to the 14 Dec 2025 snapshot; a different Inside Airbnb BCN snapshot has price
    ~79% populated. Use that snapshot for all BCN price work. No imputation or de-scoping needed.

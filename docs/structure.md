@@ -58,10 +58,10 @@ airbnb-investment-intelligence/
 │   ├── data/        loader.py · clean.py · abt.py        # build_abt(city)
 │   ├── features/    engineering.py · occupancy.py · selection.py   # SF-model, VIF/RFE
 │   ├── models/      price.py · demand.py · segmentation.py · nlp.py
-│   ├── finance/     scenarios.py     # PURE functions — the UC2 core
-│   └── agents/      coordinator.py · market_analyst.py · regulatory.py · comparables.py
-├── api/main.py                 # FastAPI: /predict_price, /estimate_revenue, /compare_scenarios
-├── app/streamlit_app.py        # UI: UC2 tab + chat
+│   ├── finance/     scenarios.py     # PURE functions — Airbnb-vs-sell decision engine core
+│   └── agents/      coordinator.py · market_analyst.py · optimisation.py · regulatory.py · comparables.py
+├── api/main.py                 # FastAPI: /predict_price, /estimate_revenue, /airbnb_vs_sell, /optimise
+├── app/streamlit_app.py        # UI: decision tab + optimisation tab + chat
 ├── scripts/        download_data.py · build_abts.py · train_all.py
 ├── tests/          test_loader.py · test_finance.py · test_schema.py
 ├── docker/         Dockerfile.api · Dockerfile.app
@@ -165,7 +165,8 @@ python -c "import airbnb_iip; print('ok')"
 
 Demo-time flow:
 `Streamlit → Coordinator (LangGraph) → agent → FastAPI endpoint → loads MLflow model →
-finance engine assembles 3 scenarios → agent narrates with SHAP + citations.`
+finance engine compares Airbnb vs. sell → agent narrates with SHAP + citations.`
+`[If owner proceeds to optimisation] → Optimisation agent → gap analysis + amenity recommendations → ranked action list.`
 
 `docker-compose up` brings API + app up together.
 
@@ -191,7 +192,7 @@ moment. Ship a cached, deterministic demo with a clearly-labelled "live mode" to
 2. Write `docs/schema.md` + the `build_abt()` signature; commit synthetic `data/sample/`.
    **This is the moment the team unblocks.**
 3. Finance engineer starts `finance/scenarios.py` as pure functions + tests against the sample
-   (needs no trained models → UC2 centerpiece progresses from hour one).
+   (needs no trained models → Airbnb-vs-sell decision engine progresses from hour one).
 4. Data lead fills in the real loader/clean/ABT behind the agreed signature.
 5. Everyone else builds their `models/` module against `sample/`, then re-runs on the real ABT.
 
@@ -217,8 +218,8 @@ given city. In order, it:
 3. **Engineers features:** amenity count + key amenity dummies; `host_tenure_days`;
    `reviews_per_month`; price-per-person; neighbourhood aggregates; calendar-derived
    seasonality; the **estimated occupancy** (San Francisco model).
-4. **Enriches** by joining external **district-level** data — sale €/m² and long-term rent
-   index — onto each listing (the UC2 inputs).
+4. **Enriches** by joining external **district-level** data — sale €/m² — onto each listing
+   (the sell-side anchor for the Airbnb-vs-sell comparison).
 5. **Attaches the `segment` label** from the clustering step (used as a feature + for benchmarking).
 6. **Returns** a single DataFrame: one row per listing, the **same columns for all three cities**
    (the contract in `schema.md`), ready for any model.
@@ -243,7 +244,7 @@ def build_abt(city: str, force: bool = False) -> pd.DataFrame:
     rev      = load_reviews(city)
     df = clean(listings)                   # 2. clean
     df = add_features(df, cal, rev)        # 3. engineer (+ occupancy, seasonality)
-    df = join_external(df, city)           # 4. enrich (€/m², rent index)
+    df = join_external(df, city)           # 4. enrich (€/m² sale price)
     df = attach_segments(df)               # 5. segment label
     validate_schema(df)                    # guard: matches docs/schema.md
     df.to_parquet(out)                     # 6. cache + return

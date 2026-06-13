@@ -1,44 +1,53 @@
 # Airbnb Investment Intelligence Platform
 
-> A governed, multi-agent AI system that helps individuals and small investors make
-> data-driven decisions about short-term rental properties in Spanish cities.
+> A governed, multi-agent AI system that helps property owners decide whether to
+> list on Airbnb or sell — and, if they choose Airbnb, how to maximise their revenue.
 >
 > **IE × KPMG Lighthouse — Capstone 2026**
 
-The platform takes a property — one you're thinking of buying, one you already own, or one
-you already host — and returns a **data-grounded, explainable investment brief** instead of a
-black-box number. It combines structured Airbnb data, external market data, and a regulatory
-knowledge base behind a conversational interface, with a full MLOps pipeline and responsible-AI
-guardrails.
+The platform takes a property you already own and answers a concrete question:
+**"Should I list this on Airbnb or sell it?"** It combines structured Airbnb data,
+real-estate market data, and a regulatory knowledge base behind a conversational interface,
+returning a **data-grounded, explainable recommendation** — not a black-box number.
+Once a decision is made, owners who choose Airbnb can continue into an **optimisation
+flow** that surfaces the highest-impact improvements to their listing.
 
 Cities covered: **Madrid · Barcelona · Málaga** · Data snapshot: **14 Sep 2025** (Inside Airbnb).
 
 ---
 
-## Use cases
+## Product flows
 
-We build **UC2 first** (it's the primary deliverable); UC1 and UC3 are stretch goals — and UC1
-comes almost for free once UC2's revenue engine exists.
+We build the **Airbnb-vs-sell decision** first (the primary deliverable); the **optimisation
+flow** is the natural second step for owners who choose Airbnb. UC1 (pre-purchase screening)
+is a stretch goal that comes almost for free once the revenue engine exists.
 
-| | Use case | Question answered |
+| | Flow | Question answered |
 |---|---|---|
-| **UC2** ⭐ *(primary)* | Own-it optimiser | *"I own a flat — should I Airbnb it, sell it, or keep it as a long-term rental?"* → compares Airbnb net revenue vs long-term rent vs indicative sale value, with break-even timelines. |
-| **UC1** | Pre-purchase screening | *"If I buy this flat, what will it earn on Airbnb and what's the gross yield?"* → predicted nightly rate, seasonal occupancy, revenue P10/P50/P90, yield, regulatory risk. |
-| **UC3** | Host improvement engine | *"I'm hosting at €120/night, 4.3★ — what should I fix?"* → review-sentiment gaps vs top comparables + prioritised actions with €-uplift. |
+| **Primary** ⭐ | Airbnb or sell? | *"I own a property — should I list it on Airbnb or sell it?"* → compares projected Airbnb net revenue against the property's indicative sale value, with break-even timelines, confidence bands, and a clear recommendation. |
+| **Secondary** | Optimise for Airbnb | *"I've decided to Airbnb — how do I maximise revenue?"* → property-specific recommendations: amenities to add, renovations with the best ROI, pricing strategy, and gap analysis vs comparable top performers. |
+| **Stretch** | Pre-purchase screening | *"If I buy this flat, what will it earn on Airbnb?"* → predicted nightly rate, seasonal occupancy, revenue P10/P50/P90, yield, and regulatory risk. |
 
 ---
 
 ## How it works
 
 ```
-User question
+Owner inputs property details
    → Streamlit UI
       → Coordinator agent (LangGraph) routes & aggregates
-         ├─ Market Analyst  → price + occupancy + financial scenario engine (+ SHAP "why")
+         ├─ Market Analyst  → price + occupancy + Airbnb-vs-sell scenario engine (+ SHAP "why")
          ├─ Regulatory (RAG) → municipal STR rules, with source citations
          └─ Comparables (RAG)→ genuinely similar performing listings
       → explainable brief: numbers from the models, narration from the LLM,
         with uncertainty bands and cited sources
+
+   [If owner chooses Airbnb]
+      → Optimisation flow
+         ├─ Feature gap analysis vs top-performing comparables
+         ├─ Amenity recommendations (occupancy uplift + nightly-rate impact)
+         ├─ Renovation / remodelling opportunities with cost-vs-revenue trade-offs
+         └─ Prioritised action list with estimated revenue impact
 ```
 
 Two cross-cutting layers wrap the whole stack: **MLOps** (MLflow · FastAPI · Docker · GitHub
@@ -138,9 +147,9 @@ by default (a "live mode" toggle exists). Never rely on live LLM calls during th
 
 - **Inside Airbnb** (public): detailed `listings.csv.gz`, `calendar.csv.gz`, `reviews.csv.gz`,
   and `neighbourhoods.geojson` per city. Not committed — fetched by `scripts/download_data.py`.
-- **External market data** (UC2): district-level **sale price per m²** and **long-term rent
-  index**, curated from published/open-data sources (not scraped). Source + date documented in
-  `data/external/`.
+- **External market data**: district-level **sale price per m²** curated from published/open-data
+  sources (not scraped). Used to model the sell-side of the Airbnb-vs-sell comparison. Source +
+  date documented in `data/external/`.
 - **Regulatory corpus** (RAG): official municipal short-term-rental rules per city. These change
   — always verify against current official sources and cite them in output.
 
@@ -228,17 +237,18 @@ runs and start with a small `--max-items` to verify behaviour.
 
 The project deliberately exercises the full master curriculum: feature engineering & ABT design,
 **VIF** and **RFE** feature selection, **PCA/Factor Analysis**, segmentation (**K-means /
-hierarchical / DBSCAN** with silhouette & elbow), **association analysis (Apriori)**, linear/OLS
-regression, **XGBoost/LightGBM** with SHAP, **Naïve Bayes + TF-IDF** sentiment, **KNN**, time
-series (**Prophet/ARIMA**), and a complete MLOps + RAG + agent-orchestration stack. The full
-mapping is in [`docs/Capstone_Plan.md`](docs/Capstone_Plan.md).
+hierarchical / DBSCAN** with silhouette & elbow), **association analysis (Apriori)** for amenity
+bundle recommendations, linear/OLS regression, **XGBoost/LightGBM** with SHAP, **Naïve Bayes +
+TF-IDF** sentiment for guest review analysis, **KNN** for comparable listings, time series
+(**Prophet/ARIMA**), and a complete MLOps + RAG + agent-orchestration stack. The full mapping is
+in [`docs/Capstone_Plan.md`](docs/Capstone_Plan.md).
 
 ---
 
 ## Project documents
 
 - [`docs/Capstone_Plan.md`](docs/Capstone_Plan.md) — full plan + master-coverage matrix
-- [`docs/UC2_Ordered_Task_Backlog.md`](docs/UC2_Ordered_Task_Backlog.md) — ordered build tasks
+- [`docs/UC2_Ordered_Task_Backlog.md`](docs/UC2_Ordered_Task_Backlog.md) — ordered build tasks (primary + optimisation flows)
 - [`docs/structure.md`](docs/structure.md) — setup & engineering conventions
 - [`docs/architecture.svg`](docs/architecture.svg) — system architecture diagram
 - [`docs/schema.md`](docs/schema.md) — the ABT data contract
@@ -250,8 +260,10 @@ mapping is in [`docs/Capstone_Plan.md`](docs/Capstone_Plan.md).
 This is an **academic capstone project** using public Inside Airbnb data and published market
 indices. All agent answers are **grounded, source-cited, and reported with uncertainty bands**;
 high-value recommendations pass through a human-review gate. The platform provides **decision
-support only and is not financial, legal, or investment advice**. Regulatory information is
-indicative and must be verified against current official municipal sources.
+support only and is not financial, legal, or investment advice**. Revenue projections and
+optimisation recommendations are indicative; actual results depend on individual property
+characteristics and market conditions. Regulatory information must be verified against current
+official municipal sources.
 
 ---
 
