@@ -26,7 +26,7 @@ Legend: ✅ Done · 🔄 In progress · ⬜ Not started
 | Inside Airbnb — Málaga | ✅ | Downloaded and validated |
 | External sale price €/m² by district | ⬜ | Needed for sell-side of Airbnb-vs-sell comparison |
 | Idealista scraper (sale + rent) | ✅ | `scripts/scrape_idealista.py`; 6 jobs × 2,500 cap; JSONL output |
-| Regulatory corpus | ✅ | Madrid, Barcelona, Málaga + national rules in `docs/regulatory/` |
+| Regulatory corpus | ✅ | Madrid, Barcelona, Málaga + national rules in `Data/regulatory/` |
 
 ### Data engineering
 | Component | Status | Notes |
