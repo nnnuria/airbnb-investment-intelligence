@@ -24,6 +24,8 @@ statsmodels>=0.14
 # ── Data collection (Idealista scraper via Apify) ─────────────────────────────
 apify-client>=1.7
 python-dotenv>=1.0
+xgboost>=1.7.6
+lightgbm>=3.3.2
 
 # ── Notebook runtime ──────────────────────────────────────────────────────────
 #jupyter>=1.1

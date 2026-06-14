@@ -51,14 +51,14 @@ Legend: ✅ Done · 🔄 In progress · ⬜ Not started
 ### Modelling
 | Component | Status | Notes |
 |---|---|---|
-| Feature selection (VIF + RFE) | ⬜ | |
-| Price model (OLS baseline) | ⬜ | |
-| Price model (XGBoost/LightGBM + SHAP) | ⬜ | |
+| Feature selection (VIF + RFE) | ✅ | VIF computed; RF-based importance threshold used for final selection; ~30 features kept |
+| Price model (OLS baseline) | ✅ | Linear Regression + Ridge; Test R² = 0.602; saved as benchmark |
+| Price model (XGBoost/LightGBM + SHAP) | ✅ | **LightGBM selected** — Test R² = 0.803, MAE = €34.6/night, MdAPE = 16%; SHAP global + per-prediction; model saved to `models/price_best_model.pkl` |
 | Segmentation (K-means / hierarchical / DBSCAN) | ⬜ | |
 | Sentiment model (NB + TF-IDF) | ✅ | Multilingual; scores in `data/processed/<city>_sentiment.parquet` |
-| Demand / seasonality (Prophet/ARIMA) | ⬜ | |
+| Demand / seasonality (Prophet/ARIMA) | ⬜ | Calendar seasonality multipliers derived (see framework doc); occupancy model not yet trained |
 | Apriori amenity bundles | ⬜ | Feeds optimisation flow recommendations |
-| MLflow experiment tracking | ⬜ | |
+| MLflow experiment tracking | ⬜ | Models saved locally; MLflow logging not yet wired |
 
 ### Primary flow — Airbnb-vs-sell decision engine
 | Component | Status | Notes |
@@ -110,6 +110,14 @@ Entries are newest-first. One bullet = one meaningful unit of work (PR, task, or
 Format: `**YYYY-MM-DD** — What changed (file or component) · who/branch if relevant`
 
 ---
+
+**2026-06-14** — Price ML model complete (`notebooks/price_ml_model.ipynb`, branch `Price_ML_Modelling`)
+- 5 models trained end-to-end: Linear Regression, Ridge, Random Forest, Gradient Boosting, XGBoost, LightGBM
+- **LightGBM selected** as production model: Test R² = 0.803, RMSE = €75.5/night, MAE = €34.6/night, MdAPE = 16%
+- Per-city: Madrid R² 0.797 · Barcelona R² 0.819 · Málaga R² 0.752
+- Top SHAP drivers: `property_type_std` (0.216), `accommodates` (0.133), `minimum_nights` (0.126), `neighbourhood_target_enc` (0.076)
+- Artefacts saved to `models/`: `price_best_model.pkl`, `price_feature_cols.json`, `price_cat_encoders.pkl`, `price_scaler.pkl`
+- `listings_with_price_hat.parquet` written to `Data/processed/` for downstream occupancy model
 
 **2026-06-14** — Investment decision framework documented
 - `docs/INVESTMENT_DECISION_FRAMEWORK.md` — Full analytical design: NPV comparison structure, cost model (Spain-specific: IBI, basuras, community fee, IRPF, CGT brackets), revenue model, seasonality layer, ML model plan (price + occupancy, LightGBM, SHAP), NPV engine design, Monte Carlo plan, implementation sequence

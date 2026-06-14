@@ -279,54 +279,50 @@ Input: target property characteristics + user cost parameters
     └─────────────┘
 ```
 
-### 6.2 Price Model
+### 6.2 Price Model — ✅ Complete
 
 **Target:** `log(price)` — log-transform handles the right-skewed price distribution  
-**Algorithm:** LightGBM (handles categoricals and missing values natively; SHAP-compatible)  
-**Baseline:** OLS with the same features (for interpretability benchmark)  
-**Validation:** time-based train/test split — not random. Train on listings with `first_review` before a cutoff date, test on more recent listings. Prevents temporal leakage.
+**Production model: LightGBM** — selected by Test R² from a 5-model comparison  
+**Artefacts:** `models/price_best_model.pkl`, `price_feature_cols.json`, `price_cat_encoders.pkl`, `price_scaler.pkl`
 
-**Features to include:**
+#### Model comparison (held-out test set)
 
-| Feature | Type | Rationale |
-|---|---|---|
-| `accommodates` | numeric | Primary capacity driver |
-| `bedrooms`, `beds`, `bathrooms_number` | numeric | Physical size |
-| `room_type` | categorical | Entire home commands 2–3× private room |
-| `property_type_std` | categorical | Already standardised in cleaning pipeline |
-| `neighbourhood_group_cleansed` | categorical | District-level location premium |
-| `latitude`, `longitude` | numeric | Fine-grained within-district variation |
-| `host_is_superhost` | bool | ~10–15% price premium observed in EDA |
-| `host_tenure_years` | numeric | Experienced hosts price more effectively |
-| `host_response_rate` | numeric | Trust/quality signal |
-| `host_acceptance_rate` | numeric | Selectivity signal |
-| `review_scores_rating` | numeric | 84% coverage; use with `has_reviews` binary flag |
-| `review_scores_cleanliness` | numeric | Most price-correlated sub-score |
-| `review_scores_location` | numeric | Location quality as perceived by guests |
-| `review_scores_value` | numeric | Value-for-money perception |
-| `number_of_reviews_ltm` | numeric | Recency demand signal |
-| `days_since_first_review` | numeric | Listing maturity / establishment |
-| `instant_bookable` | bool | Conversion effect on pricing strategy |
-| `minimum_nights` | numeric | Defines target guest segment |
-| `description_length` | numeric | Host effort proxy |
-| `city` | categorical | Baseline level shift across markets |
-| Amenity dummies (top ~30) | bool | Pool, AC, elevator, parking, washer, workspace, etc. |
+| Model | Test R² | Test MAE (€) | MdAPE | Train–Test gap |
+|-------|---------|-------------|-------|----------------|
+| **LightGBM** ⭐ | **0.803** | **€34.6** | **16.0%** | 0.116 |
+| XGBoost | 0.799 | €35.1 | 16.3% | 0.095 |
+| Gradient Boosting | 0.768 | €38.1 | 17.9% | 0.036 |
+| Random Forest | 0.766 | €37.9 | 17.4% | 0.131 |
+| Linear / Ridge | 0.602 | €49.7 | 25.6% | ~0.000 |
 
-**Features explicitly excluded:**
+#### Per-city performance (LightGBM)
 
-| Feature | Reason for exclusion |
-|---|---|
-| `availability_30/60/90/365` | Endogenous — hosts adjust availability in response to price |
-| `estimated_occupancy_l365d` | Target-derived; direct leakage |
-| `estimated_revenue_l365d` | Contains price × occupancy; severe leakage |
-| `reviews_per_month`, `number_of_reviews` | Endogenous to current bookings/performance |
-| `days_since_last_review` | Endogenous to ongoing performance |
-| `review_scores_communication`, `_checkin`, `_accuracy` | Multicollinear with `_rating`; add noise |
-| `calculated_host_listings_count` | Host strategy variable; endogenous |
-| `source`, `scrape_id` | Metadata |
+| City | n (test) | R² | MAE (€/night) | MdAPE |
+|------|----------|----|---------------|-------|
+| Madrid | 3,772 | 0.797 | €32.9 | 16.5% |
+| Barcelona | 3,031 | 0.819 | €39.5 | 15.7% |
+| Málaga | 1,719 | 0.752 | €29.4 | 15.3% |
 
-**Amenity engineering (pending step):**
-`amenities` is currently stored as a JSON string. Parse → binary columns for top-30 most common amenities by frequency. Key ones expected to matter: Pool, Air conditioning, Parking (free), Elevator, Washer+Dryer, Dedicated workspace, Dishwasher, Balcony/terrace.
+#### Top SHAP drivers (mean |SHAP| on log-price scale)
+
+| Rank | Feature | Mean \|SHAP\| | Note |
+|------|---------|-------------|------|
+| 1 | `property_type_std` | 0.216 | Entire home vs room is the largest single lever |
+| 2 | `accommodates` | 0.133 | Each additional guest capacity raises price materially |
+| 3 | `minimum_nights` | 0.126 | Long-stay listings form a distinct pricing segment |
+| 4 | `neighbourhood_target_enc` | 0.076 | Neighbourhood premium (target-encoded) |
+| 5 | `latitude` | 0.064 | Micro-location within neighbourhood |
+| 6 | `bathrooms_number` | 0.053 | Extra bathrooms add premium for larger groups |
+| 7 | `reviews_per_month` | 0.047 | Listing velocity / market position signal |
+| 8 | `longitude` | 0.044 | Coastal / central premium axis |
+| 9 | `bedrooms` | 0.040 | Bedroom count for multi-room properties |
+| 10 | `calculated_host_listings_count_entire_homes` | 0.034 | Professional host pricing behaviour |
+
+#### Features used / excluded
+
+The ~30 selected features include: `property_type_std`, `accommodates`, `minimum_nights`, `neighbourhood_target_enc`, `latitude`, `longitude`, `bathrooms_number`, `bedrooms`, `room_type`, `city`, `host_is_superhost`, `host_tenure_years`, `has_reviews`, amenity dummies (pool, AC, elevator, parking, washer, workspace, etc.), `competitive_density_500m`.
+
+**Explicitly excluded (leakage / endogeneity):** `availability_30/60/90/365`, `estimated_occupancy_l365d`, `estimated_revenue_l365d`, `days_since_last_review`, `review_scores_communication/_checkin/_accuracy` (collinear with `_rating`), `source`, `scrape_id`.
 
 ### 6.3 Occupancy Model
 
@@ -446,17 +442,17 @@ The regulatory shock probability (Bernoulli input) should default to: Madrid 8%,
 
 ## 9. Implementation Sequence
 
-| Phase | Deliverable | Depends on |
+| Phase | Deliverable | Status |
 |---|---|---|
-| 1 | Amenity parsing + competitive density features | Cleaned parquets ✅ |
-| 2 | Calendar seasonality multipliers (per city) | Calendar CSVs ✅ |
-| 3 | Price model (LightGBM + SHAP) | Phase 1 |
-| 4 | Occupancy model (LightGBM + SHAP) | Phase 3 |
-| 5 | `finance/scenarios.py` — pure NPV functions | Design above |
-| 6 | Idealista price join (€/m² by district) | Idealista scraper ✅ |
-| 7 | End-to-end pipeline: property in → decision out | Phases 1–6 |
-| 8 | Monte Carlo wrapper | Phase 5 |
-| 9 | Streamlit decision tab | Phase 7–8 |
+| 1 | Amenity parsing + competitive density features | ✅ Done (in `price_ml_model.ipynb`) |
+| 2 | Calendar seasonality multipliers (per city) | ✅ Done (in `calendar_seasonality.ipynb`) |
+| 3 | Price model (LightGBM + SHAP) | ✅ Done — R² 0.803, MAE €34.6, artefacts in `models/` |
+| 4 | Occupancy model (LightGBM + SHAP) | ⬜ Next — uses `listings_with_price_hat.parquet` |
+| 5 | `finance/scenarios.py` — pure NPV functions | ⬜ |
+| 6 | Idealista price join (€/m² by district) | ⬜ Scraper done; join not yet built |
+| 7 | End-to-end pipeline: property in → decision out | ⬜ Blocked on phases 4–6 |
+| 8 | Monte Carlo wrapper | ⬜ |
+| 9 | Streamlit decision tab | ⬜ |
 
 ---
 
