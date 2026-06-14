@@ -252,6 +252,7 @@ in [`docs/Capstone_Plan.md`](docs/Capstone_Plan.md).
 - [`docs/structure.md`](docs/structure.md) — setup & engineering conventions
 - [`docs/architecture.svg`](docs/architecture.svg) — system architecture diagram
 - [`docs/schema.md`](docs/schema.md) — the ABT data contract
+- [`docs/DATA_FINDINGS.md`](docs/DATA_FINDINGS.md) — calendar, listings, sentiment analysis, findings and recommendations
 
 ---
 
