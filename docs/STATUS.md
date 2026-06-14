@@ -111,6 +111,10 @@ Format: `**YYYY-MM-DD** — What changed (file or component) · who/branch if re
 
 ---
 
+**2026-06-14** — Investment decision framework documented
+- `docs/INVESTMENT_DECISION_FRAMEWORK.md` — Full analytical design: NPV comparison structure, cost model (Spain-specific: IBI, basuras, community fee, IRPF, CGT brackets), revenue model, seasonality layer, ML model plan (price + occupancy, LightGBM, SHAP), NPV engine design, Monte Carlo plan, implementation sequence
+- Key data findings incorporated: calendar prices 100% null across all 3 cities (no time series model); scrape-date artifact in availability data (filter to 60d+ for unbiased seasonality); one combined model with `city` as feature (not per-city)
+
 **2026-06-13** — Cross-city comparison notebook created and debugged
 - `notebooks/cross_city_comparison.ipynb` — 7-section notebook: market size, nightly rates, revenue & occupancy, top districts (investment atlas), competitive landscape, regulatory environment, city scorecard + radar chart
 - `src/airbnb_iip/data/cleaning.py` — fixed `host_name` regex bug (`regex=True` with unescaped `.` → `regex=False`; was silently replacing any ` X ` pattern)

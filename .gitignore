@@ -19,7 +19,7 @@ now/
 # Large / private data (folder structure is recreated per machine)
 data/raw/
 data/interim/
-data/processed/
+
 
 # MLflow local store
 mlruns/
