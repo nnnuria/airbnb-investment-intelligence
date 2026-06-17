@@ -13,6 +13,7 @@ plotly>=5.20
 scipy>=1.13
 scikit-learn>=1.4
 statsmodels>=0.14
+shap>=0.44             # model explainability (SHAP) for the price/sale models
 
 # ── NLP / sentiment ───────────────────────────────────────────────────────────
 # textblob>=0.18
