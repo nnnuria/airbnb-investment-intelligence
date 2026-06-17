@@ -1,22 +1,52 @@
-"""Demo decision engine — mock model responses for the KPMG presentation.
+"""Demo decision engine — real finance + occupancy, mocked price + sale inputs.
 
-Wired against the real occupancy estimator (:mod:`airbnb_iip.data.occupancy`)
-because task 2 is merged. Price prediction and sale-price lookup are mocked
-with district premiums until tasks 4/5 land — same function shape, so the
-mock can be swapped for a FastAPI call without touching the UI.
+Wired against:
+
+* :mod:`airbnb_iip.data.occupancy` — real San Francisco occupancy estimator
+  (task 2, merged).
+* :mod:`airbnb_iip.finance.costs` and :mod:`airbnb_iip.finance.scenarios`
+  — real NOI + NPV + break-even + Monte Carlo (task 5, merged). All defaults
+  are taken from the finance module; this file does not override discount
+  rate, sigmas, or cost rates.
+
+Still mocked, because the upstream models haven't shipped a UI-friendly
+inference API yet:
+
+* :func:`estimate_nightly_price` — district premium × capacity × amenities.
+  Replace when the price model (task 4) exposes a per-property endpoint.
+* :func:`estimate_sale_value` — district €/m² lookup table. Replace when
+  the sell model exposes a per-property endpoint.
+* :func:`reviews_per_month_for_demo` — feeds the occupancy estimator.
 
 Per SPRINT_STATUS line 78: never run live LLM/API calls during the demo.
 """
 
 from __future__ import annotations
 
-import math
 import random
 from dataclasses import dataclass, field
 from typing import Literal
 
+import numpy as np
+
 from airbnb_iip.config import FINANCE, OCCUPANCY
 from airbnb_iip.data.occupancy import estimate_occupancy
+from airbnb_iip.finance.costs import (
+    annual_gross_revenue,
+    cleaning_cost_annual,
+    compute_noi,
+    tourist_tax_annual,
+)
+from airbnb_iip.finance.scenarios import (
+    break_even_horizon,
+    monte_carlo,
+    npv_sell,
+)
+
+# Holding horizon for the NPV comparison. A UI-side choice — the finance
+# module's API takes ``years`` as a required parameter; 10 years is the
+# typical investor decision window.
+HOLDING_YEARS = 10
 
 # ── Demo lookup tables ───────────────────────────────────────────────────────
 # Indicative district price premiums vs city baseline. Real values come from
@@ -175,7 +205,30 @@ def estimate_sale_value(prop: Property) -> tuple[float, float]:
 
 
 def compute_scenario(prop: Property) -> Scenario:
-    """Full Airbnb-vs-sell scenario for one property — the demo's centrepiece."""
+    """Full Airbnb-vs-sell scenario for one property — the demo's centrepiece.
+
+    Wires the real finance module end-to-end:
+
+    1. Mocked price + occupancy → point estimates.
+    2. :func:`airbnb_iip.finance.costs.compute_noi` → full Spanish STR
+       cost stack (platform fee, cleaning, tourist tax, insurance,
+       maintenance, management, accounting, income tax).
+    3. :func:`airbnb_iip.finance.scenarios.npv_sell` → net sale proceeds
+       after agent fee, notary, CGT.
+    4. :func:`break_even_horizon` → smallest ``T`` where
+       ``NPV_airbnb(T) > NPV_sell``. The finance API expects callers to
+       pass a ``terminal_value_fn``; we credit the eventual sale at year
+       ``T`` (zero appreciation — conservative).
+    5. :func:`monte_carlo` → resamples price + occupancy uncertainty into
+       NPV bands and ``P(Airbnb > Sell)``, which drives the recommendation
+       and confidence.
+    6. Local resample for *annual NOI* P10/P50/P90 bands, since the
+       finance MC returns NPV bands but the UI's KPI card displays NOI.
+
+    All finance-module assumptions (discount rate, MC sigmas, cost rates)
+    come from their built-in defaults — this function does not override
+    them.
+    """
     nightly = estimate_nightly_price(prop)
     rpm = reviews_per_month_for_demo(prop)
 
@@ -184,41 +237,89 @@ def compute_scenario(prop: Property) -> Scenario:
     annual_nights = round(monthly_nights * 12)
     occupancy_rate = monthly_nights / 30
 
-    gross_year = nightly * annual_nights
-
-    cleaning_fee_total = FINANCE["cleaning_fee_per_stay_eur"] * (
-        annual_nights / OCCUPANCY["avg_length_of_stay"]
-    )
-    platform_fee = gross_year * FINANCE["platform_fee_pct"]
-    mgmt_fee = gross_year * FINANCE["management_pct"]
-    pre_tax = gross_year - platform_fee - mgmt_fee - cleaning_fee_total
-    tax = max(pre_tax, 0) * FINANCE["income_tax_pct"]
-    net_year = pre_tax - tax
-
-    # Indicative P10/P90 band — uncertainty is dominated by occupancy.
-    net_p10 = net_year * 0.78
-    net_p90 = net_year * 1.18
-
     sale_value, sale_per_m2 = estimate_sale_value(prop)
-    breakeven = sale_value / net_year if net_year > 0 else math.inf
 
-    if breakeven <= 12:
-        rec = "airbnb"
-        confidence = max(0.55, min(0.92, 1 - (breakeven / 24)))
-    elif breakeven >= 22:
-        rec = "sell"
-        confidence = max(0.55, min(0.92, (breakeven - 12) / 24))
+    # ── Real NOI via the finance module ──────────────────────────────────────
+    def _make_cost_kwargs(occ_nights: float) -> dict:
+        """Cost-kwargs factory — cleaning + tourist tax scale with occupancy."""
+        return dict(
+            property_value=sale_value,
+            cleaning_cost_eur=cleaning_cost_annual(
+                occ_nights,
+                avg_length_of_stay=OCCUPANCY["avg_length_of_stay"],
+            ),
+            tourist_tax_eur=tourist_tax_annual(occ_nights, city=prop.city),
+            management_fee_rate=FINANCE["management_pct"],
+        )
+
+    gross = annual_gross_revenue(nightly, annual_nights)
+    cost_kwargs = _make_cost_kwargs(annual_nights)
+    noi = compute_noi(gross, **cost_kwargs)
+    net_year = noi["noi"]
+
+    # ── Real sale-side: NPV_sell with realistic owner assumptions ────────────
+    # The form doesn't collect purchase price; assume the typical Spanish
+    # owner bought 10 yrs ago at 70% of today's value with 4% acquisition
+    # costs and 2% in documented improvements. CGT is computed progressively
+    # by the finance module from the resulting gain.
+    sell = npv_sell(
+        sale_price=sale_value,
+        purchase_price=sale_value * 0.70,
+        purchase_costs=sale_value * 0.04,
+        documented_improvements=sale_value * 0.02,
+    )
+    sell_net = sell["net_proceeds"]
+
+    # ── Real break-even horizon ──────────────────────────────────────────────
+    # Per the finance API docstring, callers should supply a terminal value
+    # for a realistic comparison. Use a flat (no-appreciation) terminal
+    # equal to today's net sale proceeds.
+    be_t = break_even_horizon(
+        noi_annual=net_year,
+        npv_sell_value=sell_net,
+        terminal_value_fn=lambda _t: sell_net,
+        max_years=30,
+    )
+    breakeven_years = float(be_t) if be_t is not None else 99.0
+
+    # ── Annual NOI P10/P50/P90 (local MC; UI card displays NOI, not NPV) ─────
+    p10, p50, p90 = _resample_annual_noi(
+        nightly, annual_nights, _make_cost_kwargs, n=1500,
+    )
+
+    # ── Recommendation: NPV-based via the finance Monte Carlo ────────────────
+    mc = monte_carlo(
+        price_hat=nightly,
+        occ_hat=annual_nights,
+        years=HOLDING_YEARS,
+        npv_sell_value=sell_net,
+        cost_kwargs=cost_kwargs,
+        terminal_value_net=sell_net,
+        random_state=42,
+        n_simulations=1500,
+    )
+    p_airbnb = mc["p_airbnb_gt_sell"]
+    if p_airbnb >= 0.60:
+        rec, confidence = "airbnb", p_airbnb
+    elif p_airbnb <= 0.40:
+        rec, confidence = "sell", 1.0 - p_airbnb
     else:
-        rec = "marginal"
-        confidence = 0.55
+        rec, confidence = "marginal", max(p_airbnb, 1.0 - p_airbnb)
+
+    # ── Cost breakdown for the UI: surface every non-zero NOI line ───────────
+    cost_lines = [
+        ("Platform fee", noi["platform_fee"]),
+        ("Cleaning", noi["cleaning_cost"]),
+        ("Tourist tax", noi["tourist_tax"]),
+        ("Management", noi["management_fee"]),
+        ("Maintenance", noi["maintenance"]),
+        ("Insurance", noi["insurance"]),
+        ("Accounting", noi["accounting_fee"]),
+        ("Income tax", noi["tax"]),
+    ]
+    costs = [(label, round(v, 0)) for label, v in cost_lines if v > 0]
 
     seasonality = _demo_seasonality(prop.city.lower())
-    costs = [
-        ("Platform fee (3%)", round(platform_fee, 0)),
-        ("Management (20%)", round(mgmt_fee, 0)),
-        ("Cleaning fees", round(cleaning_fee_total, 0)),
-        ("Income tax (19%)", round(tax, 0)),
-    ]
     drivers = _demo_drivers(prop)
 
     return Scenario(
@@ -227,17 +328,49 @@ def compute_scenario(prop: Property) -> Scenario:
         predicted_nightly_eur=nightly,
         occupancy_rate_annual=round(occupancy_rate, 3),
         nights_booked_year=annual_nights,
-        gross_revenue_year_eur=round(gross_year, 0),
+        gross_revenue_year_eur=round(gross, 0),
         net_revenue_year_eur=round(net_year, 0),
-        net_revenue_p10_eur=round(net_p10, 0),
-        net_revenue_p90_eur=round(net_p90, 0),
+        net_revenue_p10_eur=round(p10, 0),
+        net_revenue_p90_eur=round(p90, 0),
         sale_price_eur=sale_value,
         sale_price_per_m2_eur=sale_per_m2,
-        breakeven_years=round(breakeven, 1) if breakeven != math.inf else 99.0,
+        breakeven_years=round(breakeven_years, 1),
         monthly_seasonality=seasonality,
         cost_breakdown=costs,
         feature_drivers=drivers,
     )
+
+
+def _resample_annual_noi(
+    price_hat: float,
+    occ_hat: float,
+    cost_kwargs_factory,
+    *,
+    n: int = 1500,
+    price_sigma_pct: float = 0.225,
+    occ_sigma_pct: float = 0.20,
+    random_state: int = 42,
+) -> tuple[float, float, float]:
+    """Resample annual NOI to get its P10/P50/P90 bands.
+
+    The finance module's :func:`monte_carlo` returns *NPV* bands (discounted
+    over many years). The "Net annual revenue" KPI card displays *annual
+    NOI*, so we run a small local Monte Carlo using the same noise model
+    as the finance MC but compute NOI directly. The ``cost_kwargs_factory``
+    is called per draw with the sampled occupancy so cleaning and tourist
+    tax scale correctly.
+    """
+    rng = np.random.default_rng(random_state)
+    price_draws = rng.normal(price_hat, price_hat * price_sigma_pct, n).clip(min=0)
+    occ_draws = rng.normal(occ_hat, occ_hat * occ_sigma_pct, n).clip(min=0, max=365)
+
+    nois = np.empty(n)
+    for i in range(n):
+        gross = annual_gross_revenue(float(price_draws[i]), float(occ_draws[i]))
+        ck = cost_kwargs_factory(float(occ_draws[i]))
+        nois[i] = compute_noi(gross, **ck)["noi"]
+    p10, p50, p90 = np.percentile(nois, [10, 50, 90])
+    return float(p10), float(p50), float(p90)
 
 
 # ── Optimisation — improvement ideas ─────────────────────────────────────────
