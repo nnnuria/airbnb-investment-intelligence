@@ -67,11 +67,39 @@ def test_estimate_occupancy_caps_at_ceiling():
 
 
 def test_stub_endpoints_are_flagged():
-    for path, payload in [
-        ("/estimate_revenue", {"price_per_night": 120, "occupancy_rate": 0.5}),
-        ("/airbnb_vs_sell", {"city": "Madrid", "sq_m": 80}),
-        ("/optimise", {"city": "Madrid"}),
-    ]:
-        r = client.post(path, json=payload)
-        assert r.status_code == 200, path
-        assert r.json().get("_stub") is True, path
+    # /optimise is still a stub (waits on the optimisation flow); the finance
+    # endpoints below are now live.
+    r = client.post("/optimise", json={"city": "Madrid"})
+    assert r.status_code == 200
+    assert r.json().get("_stub") is True
+
+
+def test_estimate_revenue_is_live_and_coherent():
+    r = client.post(
+        "/estimate_revenue",
+        json={"price_per_night": 120, "occupancy_rate": 0.5, "city": "Madrid"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["_stub"] is False
+    # Gross = 120 * 0.5 * 365; net is after costs + tax, so strictly lower.
+    assert body["annual_gross_eur"] == pytest.approx(120 * 0.5 * 365, rel=1e-6)
+    assert 0 < body["annual_net_eur"] < body["annual_gross_eur"]
+    assert body["p10_eur"] <= body["p50_eur"] <= body["p90_eur"]
+
+
+def test_airbnb_vs_sell_is_live_and_coherent():
+    r = client.post(
+        "/airbnb_vs_sell",
+        json={"city": "Madrid", "neighbourhood_cleansed": "Salamanca", "sq_m": 80},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["_stub"] is False
+    assert body["recommendation"] in ("Airbnb", "Sell")
+    assert body["npv_sell_eur"] > 0
+    assert body["break_even_years"] is None or isinstance(body["break_even_years"], int)
+    conf = body["confidence"]
+    assert set(conf) >= {"p_airbnb_gt_sell", "p10_eur", "p90_eur"}
+    assert 0.0 <= conf["p_airbnb_gt_sell"] <= 1.0
+    assert conf["p10_eur"] <= conf["p90_eur"]

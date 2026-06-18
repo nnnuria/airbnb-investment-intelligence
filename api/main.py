@@ -6,8 +6,8 @@ Docs:
     http://127.0.0.1:8000/docs
 
 Endpoint status:
-    LIVE   /predict_price, /estimate_occupancy
-    STUB   /estimate_revenue, /airbnb_vs_sell, /optimise  (flagged "_stub")
+    LIVE   /predict_price, /estimate_occupancy, /estimate_revenue, /airbnb_vs_sell
+    STUB   /optimise  (flagged "_stub")
 """
 
 from __future__ import annotations
@@ -29,13 +29,15 @@ async def lifespan(app: FastAPI):
     """Warm the price model once at startup so first request isn't slow."""
     try:
         from airbnb_iip.models.price import get_price_predictor
+        from airbnb_iip.models.sale import get_sale_predictor
 
         get_price_predictor()
+        get_sale_predictor()
         app.state.price_model_loaded = True
-        logger.info("Price model warmed at startup.")
+        logger.info("Price and sale models warmed at startup.")
     except Exception:  # pragma: no cover - degraded mode still serves stubs
         app.state.price_model_loaded = False
-        logger.exception("Price model failed to load — /predict_price will error.")
+        logger.exception("Model warm-up failed — /predict_price and /airbnb_vs_sell will error.")
     yield
 
 
