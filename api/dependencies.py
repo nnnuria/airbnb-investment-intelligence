@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 from airbnb_iip.models.price import PricePredictor, get_price_predictor
+from airbnb_iip.models.sale import SalePredictor, get_sale_predictor
 
 
 def price_predictor() -> PricePredictor:
     """FastAPI dependency: the process-wide PricePredictor singleton."""
     return get_price_predictor()
+
+
+def sale_predictor() -> SalePredictor:
+    """FastAPI dependency: the process-wide SalePredictor singleton."""
+    return get_sale_predictor()
