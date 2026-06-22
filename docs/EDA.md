@@ -156,15 +156,17 @@ Source: `notebooks/sell_price_eda.ipynb`, from the scraped Idealista sale listin
 - **k:** silhouette peaks at the trivial **k=2** (74% blob), so k is constrained to ≥4; among k∈[4,6] with no <5% micro-clusters → **k=4, silhouette 0.365**, largest segment **24.8% of all listings** (vs. the prior run's 56.7% mega-cluster).
 - **DBSCAN sanity check:** 63 clusters, 31% noise, silhouette 0.27 → K-means is the right choice.
 
-| Segment (named by price) | n | % of total | mean price |
-|---|---:|---:|---:|
-| Budget | 9,873 | 23.1% | €75 |
-| Standard | 10,262 | 24.0% | €159 |
-| Mid-Market | 10,600 | 24.8% | €162 |
-| Premium | 7,842 | 18.3% | €239 |
-| Ultra / Extreme | 4,234 | 9.9% | — |
+**Segments are named by structure** (not price rank), grounded in the actual cluster profiles:
 
-> **Honest caveat (visible in the real output):** the two mid tiers land at almost the same price (**€159 vs €162**) — they differ *structurally* (room-mix / centrality) but not in price, so the middle of the market doesn't form crisp price tiers. Budget and Premium are stable; the mid-market is fuzzy. If a cleaner three-tier price story is wanted, **k=3** (Budget/Mid/Premium, silhouette 0.33, largest 42.7%) is the alternative. Treat segments as indicative. See `NOTEBOOK_IMPROVEMENTS.md`.
+| Segment | n | % of total | mean price | What it is |
+|---|---:|---:|---:|---|
+| Budget private rooms | 9,873 | 23.1% | €75 | ~95% private rooms, small (~1.8 guests) |
+| Central entire homes | 10,262 | 24.0% | €159 | entire homes, **100% central** |
+| Non-central entire homes | 10,600 | 24.8% | €162 | entire homes, **0% central** |
+| Premium entire homes | 7,842 | 18.3% | €239 | **large** entire homes (~5.3 guests) |
+| Ultra / Extreme | 4,234 | 9.9% | €262 | multivariate outliers, lower rating |
+
+> **The two ~€160 tiers are the same price but split by location** (central vs non-central entire homes) — exactly the signal `is_central` was protected to keep. Same price, different location is a real, defensible distinction, which is why the segments are named by structure rather than price (it also pre-empts the obvious "why are these two separate?" question). A coarser three-tier `k=3` view (Budget/Mid/Premium, silhouette 0.33, largest 42.7%) is available if a pure price story is preferred. See `NOTEBOOK_IMPROVEMENTS.md`.
 
 ---
 

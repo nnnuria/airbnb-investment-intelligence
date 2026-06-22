@@ -191,10 +191,10 @@ All tunable assumptions are *intended* to live in config, for auditability:
 - **Outlier split:** rows with >1 IQR-outlier column (~10%, per-city IQR bounds) are carved off as a manual **Ultra / Extreme** segment and never clustered.
 - **Final features (verified):** a **lean protected core** — `log1p_accommodates`, `log1p_bedrooms`, `log1p_bathrooms_number`, `review_scores_rating`, `is_entire_place`, `is_private_room`, `is_central` — reached via the CV elimination loop (which strips the low-signal amenity flags), then clustered in **PCA(0.9) space**. City identity (`is_madrid`/`is_barcelona`) is excluded by design (it's a model feature; including it drops silhouette ≈0.36 → 0.18).
 - **k & quality (executed end-to-end, no errors):** silhouette peaks at the trivial k=2, so k is constrained to ≥4; validation picks **k=4, silhouette 0.365**, largest segment **27.5% of clean / 24.8% of total** (vs the prior 56.7% mega-cluster). DBSCAN check (63 clusters, 31% noise, sil 0.27) confirms K-means.
-- **Output (actual):** `Segment_Name` ∈ {Budget €75, Standard €159, Mid-Market €162, Premium €239} + Ultra/Extreme (9.9%), named by mean price; `Cluster_Final` → `Data/processed/listings_segmented.parquet` (42,811 rows, regenerated).
+- **Output (actual):** `Segment_Name` named by **structure** — Budget private rooms (€75) · Central entire homes (€159) · Non-central entire homes (€162) · Premium entire homes (€239) · Ultra/Extreme (€262); `Cluster_Final` → `Data/processed/listings_segmented.parquet` (42,811 rows, regenerated).
 - **Validation:** PCA-space elbow + silhouette sweep; DBSCAN sanity check with **auto-`eps`** from the k-NN knee.
 
-> Caveats: (1) consumes `has_*`/`bundle_*` columns from the amenity notebook (§2) — re-run both together; (2) the **two mid tiers are near-identical in price (€159 vs €162)** — the middle of the market is structurally-distinct but not price-distinct, so segments are indicative tiers (k=3 is the cleaner-naming alternative). See `NOTEBOOK_IMPROVEMENTS.md`.
+> Caveats: (1) consumes `has_*`/`bundle_*` columns from the amenity notebook (§2) — re-run both together; (2) the two ~€160 tiers (**Central vs Non-central entire homes**) are the same price but split by location — a real, defensible distinction, hence the structural names; `k=3` is the coarser price-only alternative. See `NOTEBOOK_IMPROVEMENTS.md`.
 
 ---
 
