@@ -38,13 +38,15 @@ Final config: **lean protected core (capacity + quality + room-type + centrality
 | Reproducible | manual `=22` / `eps=1.5` | **deterministic, validated** |
 | DBSCAN check | — | 63 clusters / 31% noise → K-means chosen |
 
-Actual `Segment_Name` output (named by mean price): **Budget** 9,873 (€75) · **Standard** 10,262 (€159) · **Mid-Market** 10,600 (€162) · **Premium** 7,842 (€239) · **Ultra/Extreme** 4,234 (outliers).
+Actual `Segment_Name` output (named by **structure**): **Budget private rooms** 9,873 (€75, 95% private) · **Central entire homes** 10,262 (€159, 100% central) · **Non-central entire homes** 10,600 (€162, 0% central) · **Premium entire homes** 7,842 (€239, large) · **Ultra/Extreme** 4,234.
 
 ### Bug caught in audit (and fixed)
 My first version of Phase 10 chose k by "max silhouette, no micro-clusters" over k=2..8 — which selects the **trivial k=2 split (74% blob)**, worse than the original. Fixed by **constraining k≥4** (a 2–3-way split is too coarse for a market segmentation). Verified: it now picks k=4.
 
-### Honest limit (why this isn't "100% perfect")
-The **two mid tiers come out at €159 vs €162** — nearly identical price. They differ *structurally* (room-mix/centrality) but not in price, so the middle of the market does **not** form crisp price tiers; only Budget and Premium are clean. STR listings sit on continuous gradients, so a perfectly separated clustering isn't achievable on this data. The improvement is real and verified (balanced, location-aware, no trivia, reproducible, DBSCAN-validated); **k=3** (silhouette 0.33, largest 42.7%) is the cleaner-naming alternative if three price tiers are preferred. The choice between k=3 and k=4 is Nuria's to make.
+### Mid-market — resolved (team feedback incorporated)
+Earlier I called the two mid tiers (€159/€162) a "fuzzy" mid-market. Profiling the actual clusters shows the split is **clean and meaningful**: **Central entire homes (100% central)** vs **Non-central entire homes (0% central)** — same price, different location, which is exactly the signal `is_central` was protected to preserve. Segments are now **named by structure** so this is self-evident on a slide, and it answers the strongest likely challenge ("why are two same-price tiers separate?").
+
+What is *not* on offer: a single silhouette much above ~0.36 — STR listings sit on continuous gradients, so segments are a useful coarse grouping, not crisp natural classes. A coarser **k=3** (Budget/Mid/Premium, silhouette 0.33, largest 42.7%) remains available if a pure price story is ever preferred.
 
 ## Known coupling to flag
 `segmentation.ipynb` auto-includes whatever `has_*`/`bundle_*` columns
