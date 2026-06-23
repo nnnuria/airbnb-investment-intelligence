@@ -71,6 +71,23 @@ class PredictPriceResponse(BaseModel):
     model: str = "LightGBM"
 
 
+# ── /explain_price ───────────────────────────────────────────────────────────
+
+class FeatureContribution(BaseModel):
+    feature: str = Field(examples=["neighbourhood_target_enc"])
+    shap_value: float = Field(
+        examples=[0.1066],
+        description="SHAP value in the model's own output space (log1p(price)).",
+    )
+    direction: str = Field(examples=["increases"], description='"increases" | "decreases"')
+
+
+class ExplainPriceResponse(BaseModel):
+    price_per_night: float = Field(examples=[148.0])
+    drivers: list[FeatureContribution]
+    model: str = "LightGBM"
+
+
 # ── /estimate_occupancy ─────────────────────────────────────────────────────────
 
 class EstimateOccupancyRequest(BaseModel):

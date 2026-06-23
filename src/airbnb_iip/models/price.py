@@ -86,6 +86,7 @@ class PricePredictor:
             float(np.mean(list(self._nbh_map.values()))) if self._nbh_map else 0.0
         )
         self.medians: dict[str, float] = self._compute_medians(Path(listings_path))
+        self._explainer: Any = None  # lazy shap.TreeExplainer, built on first explain()
         logger.info(
             "PricePredictor ready: %s, %d features, medians from %s",
             self.best_model, len(self.features),
@@ -101,20 +102,55 @@ class PricePredictor:
         minimal spec (e.g. just ``city`` + ``accommodates``) still returns a
         number — accuracy improves as more fields are supplied.
         """
+        ordered = self._prepare_ordered_frame(prop)
+        y_log = float(self.model.predict(ordered)[0])
+        return float(np.expm1(y_log))
+
+    def explain(self, prop: Mapping[str, Any], top_n: int = 6) -> list[dict[str, Any]]:
+        """Per-prediction SHAP feature attribution — the agent layer's "why".
+
+        Returns the ``top_n`` features by |SHAP value| (descending), each as
+        ``{"feature", "shap_value", "direction"}``. SHAP values are in the
+        model's own output space (log1p(price)), so they describe each
+        feature's *relative* push on price, not a EUR amount — narrate them
+        qualitatively (e.g. "neighbourhood is the strongest positive driver").
+        """
+        import shap
+
+        ordered = self._prepare_ordered_frame(prop)
+        if self._explainer is None:
+            self._explainer = shap.TreeExplainer(self.model)
+        shap_values = np.asarray(self._explainer.shap_values(ordered))[0]
+
+        ranked = sorted(
+            zip(self.features, shap_values.tolist()),
+            key=lambda kv: -abs(kv[1]),
+        )[:top_n]
+        return [
+            {
+                "feature": feature,
+                "shap_value": round(value, 4),
+                "direction": "increases" if value > 0 else "decreases",
+            }
+            for feature, value in ranked
+        ]
+
+    # ── internals ───────────────────────────────────────────────────────────
+
+    def _prepare_ordered_frame(self, prop: Mapping[str, Any]):
+        """Raw spec → ordered, median-filled, UNSCALED feature frame.
+
+        Shared by :meth:`predict` and :meth:`explain` so both build the
+        identical feature vector. Named columns (not a bare ndarray) so
+        LightGBM doesn't warn about missing feature names.
+        """
         import pandas as pd
 
         feats = self._build_features_frame(pd.DataFrame([dict(prop)]))
         for col in self.features:
             fallback = self._nbh_default if col == NEIGHBOURHOOD_FEATURE else 0.0
             feats[col] = feats[col].fillna(self.medians.get(col, fallback))
-
-        # Ordered, named, UNSCALED frame straight to the model (named so
-        # LightGBM doesn't warn about missing feature names).
-        ordered = feats[self.features]
-        y_log = float(self.model.predict(ordered)[0])
-        return float(np.expm1(y_log))
-
-    # ── internals ───────────────────────────────────────────────────────────
+        return feats[self.features]
 
     def _build_features_frame(self, df):
         """Map a raw-spec frame into the 29 encoded model columns (NaN-filled later)."""

@@ -97,6 +97,11 @@ class RegulatoryAgent:
             google_api_key=api_key,
             temperature=0,
             max_output_tokens=500,
+            # Without this, gemini-2.5-flash spends max_output_tokens on
+            # internal reasoning and the visible answer gets cut off
+            # mid-sentence (finish_reason="MAX_TOKENS") even for short
+            # prompts. Confirmed via a raw API smoke test.
+            thinking_budget=0,
         )
 
     # ── Index ─────────────────────────────────────────────────────────────────
