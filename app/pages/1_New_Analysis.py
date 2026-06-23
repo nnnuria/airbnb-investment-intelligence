@@ -17,13 +17,13 @@ from components.branding import (
     WARNING,
     WHITE,
 )
-from components.mocks import (
+from components.engine import (
     CITIES,
     CITY_LABELS,
-    DISTRICT_PREMIUM,
     ROOM_TYPES,
     Property,
     compute_scenario,
+    get_city_districts,
 )
 from components.storage import save_record
 from components.styling import (
@@ -49,9 +49,7 @@ with st.form("analysis_form", border=False):
     with col1:
         st.markdown("**Location**")
         city = st.selectbox("City", CITIES, format_func=lambda c: CITY_LABELS[c])
-        districts = sorted(
-            {d for (c, d) in DISTRICT_PREMIUM if c == city}
-        ) or ["Centro"]
+        districts = get_city_districts(city) or ["Centro"]
         district = st.selectbox("District", districts)
         nickname = st.text_input(
             "Nickname (optional)",
@@ -157,10 +155,10 @@ if scen and prop:
         )
     with k3:
         card(
-            "Break-even",
+            "Payback period",
             f"{scen.breakeven_years:.1f} yrs"
             if scen.breakeven_years < 50 else "50+ yrs",
-            "to match sale value",
+            "net income to recover sale value",
         )
     with k4:
         card(

@@ -16,7 +16,7 @@ from components.branding import (
     WARNING,
     WHITE,
 )
-from components.mocks import CITY_LABELS, suggest_improvements
+from components.engine import CITY_LABELS, suggest_improvements
 from components.styling import apply_page_style, footer_disclaimer, hero
 
 apply_page_style("Optimisation")

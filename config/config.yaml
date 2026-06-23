@@ -9,9 +9,9 @@ cities: [madrid, barcelona, malaga]
 snapshot_date: "2025-09-14"
 
 occupancy:                  # San Francisco model assumptions
-  review_rate: 0.50         # fraction of stays that leave a review
+  review_rate: 0.50         # fraction of stays that leave a review (Inside Airbnb default)
   avg_length_of_stay: 3     # nights; tune per city
-  max_occupancy: 0.70       # realistic ceiling
+  max_occupancy: 0.70       # realistic ceiling (= 255 nights/year, matches IAB)
 
 finance:                    # editable + auditable (governance)
   cleaning_fee_per_stay_eur: 45

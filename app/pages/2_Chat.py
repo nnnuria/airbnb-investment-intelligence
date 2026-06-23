@@ -13,7 +13,7 @@ from components.branding import (
     TEXT_SECONDARY,
     WHITE,
 )
-from components.mocks import CITY_LABELS, chat_reply
+from components.engine import CITY_LABELS, chat_reply
 from components.styling import apply_page_style, footer_disclaimer, hero
 
 apply_page_style("Chat")

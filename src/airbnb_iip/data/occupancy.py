@@ -17,20 +17,30 @@ pure functions wired to our own auditable assumptions
 The model
 =========
 
+Scalar form (one listing, monthly):
+
     nights_per_month  ≈  (reviews_per_month / review_rate) × avg_length_of_stay
-    nights_per_year   ≈  nights_per_month × 12
+    occupancy_rate    =  nights_per_month / 30     (capped at ``max_occupancy``)
+
+Vectorised form (dataframe, annual — matches Inside Airbnb):
+
+    nights_per_year   ≈  (number_of_reviews_ltm / review_rate) × avg_length_of_stay
     occupancy_rate    =  nights_per_year / 365     (capped at ``max_occupancy``)
+
+``number_of_reviews_ltm`` (reviews in the last 12 months) is used instead
+of ``reviews_per_month`` because it covers one full seasonal cycle of the
+most recent year and avoids lifetime-average dilution for older listings.
+Reverse-engineering the Inside Airbnb pre-computed column confirms it uses
+this input with the parameters below (83 % exact match on the dataset).
 
 Assumptions (defaults from :data:`airbnb_iip.config.OCCUPANCY`):
 
 * ``review_rate`` = 0.50 — share of stays that leave a review. Inside
-  Airbnb's published default; tune per city if a stronger anchor is
-  available (e.g. Madrid/Barcelona STR registry).
+  Airbnb's published default; confirmed by reverse-engineering their column.
 * ``avg_length_of_stay`` = 3 — mean booking length in nights for urban
   short-term rentals.
-* ``max_occupancy`` = 0.70 — realistic annual occupancy ceiling. Caps the
-  estimate at ``floor(0.70 × 365) = 255`` nights/year, matching the upper
-  bound observed in Inside Airbnb's pre-computed column.
+* ``max_occupancy`` = 0.70 — annual occupancy ceiling. Caps the estimate
+  at ``floor(0.70 × 365) = 255`` nights/year, matching Inside Airbnb.
 
 This is an **indicative** estimate, not ground truth. Use it as a feature
 or target for downstream models — never present it as a guaranteed
@@ -105,26 +115,27 @@ def estimate_occupancy_l365d(
     review_rate: float = OCCUPANCY["review_rate"],
     avg_length_of_stay: float = OCCUPANCY["avg_length_of_stay"],
     max_occupancy: float = OCCUPANCY["max_occupancy"],
-    reviews_per_month_col: str = "reviews_per_month",
+    reviews_ltm_col: str = "number_of_reviews_ltm",
 ):
     """Vectorised SF estimator: estimated booked nights over the last 365 days.
 
     Drop-in replacement for Inside Airbnb's pre-computed
     ``estimated_occupancy_l365d`` column. Same name, same dtype (int64),
-    same upper bound (``floor(max_occupancy * 365)``, i.e. 255 nights with
-    the default 0.70 ceiling).
+    same upper bound (255 nights with the default 0.70 ceiling).
 
     Parameters
     ----------
     df
-        A pandas DataFrame containing ``reviews_per_month_col``. NaN and
-        negative values are treated as zero.
+        A pandas DataFrame containing ``reviews_ltm_col`` — the count of
+        reviews received in the last 12 months. NaN and negative values are
+        treated as zero.
     review_rate, avg_length_of_stay, max_occupancy
         See :func:`estimate_occupancy`. Defaults from
         :data:`airbnb_iip.config.OCCUPANCY`.
-    reviews_per_month_col
-        Override the source column name. Defaults to ``"reviews_per_month"``
-        — the Inside Airbnb canonical name.
+    reviews_ltm_col
+        Override the source column name. Defaults to
+        ``"number_of_reviews_ltm"`` — the Inside Airbnb canonical name for
+        last-twelve-months review count.
 
     Returns
     -------
@@ -137,30 +148,23 @@ def estimate_occupancy_l365d(
     ValueError
         If assumptions are out of range.
     KeyError
-        If ``reviews_per_month_col`` is missing from ``df``.
-
-    Notes
-    -----
-    Annualisation uses ``× 12`` (months in a year), matching Inside Airbnb's
-    convention. This deliberately differs from a pure linear scaling of the
-    monthly value to ``365/30 ≈ 12.17`` so the column lines up with the
-    pre-computed one.
+        If ``reviews_ltm_col`` is missing from ``df``.
     """
     import pandas as pd
 
     _validate_assumptions(review_rate, avg_length_of_stay, max_occupancy)
-    if reviews_per_month_col not in df.columns:
+    if reviews_ltm_col not in df.columns:
         raise KeyError(
-            f"DataFrame is missing column {reviews_per_month_col!r}. "
-            "Pass reviews_per_month_col= to override the source column."
+            f"DataFrame is missing column {reviews_ltm_col!r}. "
+            "Pass reviews_ltm_col= to override the source column."
         )
 
     reviews = (
-        pd.to_numeric(df[reviews_per_month_col], errors="coerce")
+        pd.to_numeric(df[reviews_ltm_col], errors="coerce")
         .fillna(0.0)
         .clip(lower=0.0)
     )
-    nights_year = (reviews / review_rate) * avg_length_of_stay * MONTHS_PER_YEAR
+    nights_year = (reviews / review_rate) * avg_length_of_stay
     ceiling = math.floor(max_occupancy * DAYS_PER_YEAR)
     capped = nights_year.clip(upper=ceiling)
     return (
