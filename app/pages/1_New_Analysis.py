@@ -140,6 +140,22 @@ if scen and prop:
         unsafe_allow_html=True,
     )
 
+    # ── Governance banner ────────────────────────────────────────────────────
+    gov = scen.governance or {}
+    violations = gov.get("violations", [])
+    if gov.get("human_review_required") or violations:
+        lines = [v["message"] for v in violations]
+        if gov.get("human_review_required") and not violations:
+            lines.append(
+                "Recommendation is marginal — review the assumptions before "
+                "treating this as a clear signal."
+            )
+        banner = st.error if any(v["severity"] == "blocked" for v in violations) else st.warning
+        banner(
+            "**Governance review flagged this analysis:**\n\n"
+            + "\n".join(f"- {line}" for line in lines)
+        )
+
     # KPI row
     k1, k2, k3, k4 = st.columns(4, gap="medium")
     with k1:
