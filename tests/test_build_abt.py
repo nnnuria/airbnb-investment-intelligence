@@ -24,6 +24,7 @@ def _listings(n=3, city="madrid"):
         "latitude": [40.4168 + 0.001 * i for i in range(n)],
         "longitude": [-3.7038] * n,
         "reviews_per_month": [1.0] * n,
+        "number_of_reviews_ltm": [12.0] * n,
     })
 
 
