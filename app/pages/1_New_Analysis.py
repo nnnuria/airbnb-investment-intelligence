@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from airbnb_iip.agents.comparables import get_comparables_agent
 from components.branding import (
     BORDER_SUBTLE,
     DISCLAIMER,
@@ -301,6 +303,95 @@ if scen and prop:
             uniformtext=dict(minsize=10, mode="show"),
         )
         st.plotly_chart(fig4, use_container_width=True, config={"displayModeBar": False})
+
+    st.write("")
+    st.write("")
+
+    # ── Market comparables ───────────────────────────────────────────────────
+    try:
+        comp_result = get_comparables_agent().find_comparables(
+            {
+                "city": prop.city,
+                "district": prop.district,
+                "room_type": prop.room_type,
+                "accommodates": prop.accommodates,
+                "bedrooms": prop.bedrooms,
+                "bathrooms_number": prop.bathrooms,
+            },
+            k=5,
+        )
+        comps = comp_result["comparables"]
+        bench = comp_result["benchmark"]
+    except Exception:
+        comps, bench, comp_result = [], {}, {}
+
+    with st.expander("Market comparables — 5 similar listings", expanded=False):
+        if not comps:
+            st.info("No comparable listings found for this district and room type.")
+        else:
+            price_b = bench.get("price", {})
+            rev_b = bench.get("estimated_revenue_l365d", {})
+            rat_b = bench.get("review_scores_rating", {})
+
+            b1, b2, b3 = st.columns(3, gap="medium")
+            with b1:
+                card(
+                    "Median nightly price",
+                    f"€{price_b.get('median', 0):,.0f}",
+                    f"P25–P75: €{price_b.get('p25', 0):,.0f} – €{price_b.get('p75', 0):,.0f}",
+                )
+            with b2:
+                card(
+                    "Median annual revenue",
+                    f"€{rev_b.get('median', 0):,.0f}",
+                    f"P25–P75: €{rev_b.get('p25', 0):,.0f} – €{rev_b.get('p75', 0):,.0f}",
+                )
+            with b3:
+                median_rat = rat_b.get("median")
+                card(
+                    "Median rating",
+                    f"{median_rat:.2f} / 5" if median_rat else "—",
+                    (
+                        f"P25–P75: {rat_b.get('p25', 0):.2f} – {rat_b.get('p75', 0):.2f}"
+                        if median_rat else "No ratings data"
+                    ),
+                )
+
+            st.write("")
+
+            rows = []
+            for c in comps:
+                raw_name = c.get("name") or "—"
+                name = raw_name[:48] + "…" if len(raw_name) > 48 else raw_name
+                rows.append({
+                    "Name": name,
+                    "Neighbourhood": c.get("neighbourhood_cleansed") or "—",
+                    "Beds": int(c["bedrooms"]) if c.get("bedrooms") is not None else None,
+                    "Nightly (€)": c.get("price"),
+                    "Revenue / yr (€)": c.get("estimated_revenue_l365d"),
+                    "Rating": c.get("review_scores_rating"),
+                })
+
+            st.dataframe(
+                pd.DataFrame(rows),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Nightly (€)": st.column_config.NumberColumn(format="€%.0f"),
+                    "Revenue / yr (€)": st.column_config.NumberColumn(format="€%.0f"),
+                    "Rating": st.column_config.NumberColumn(format="%.2f ⭐"),
+                },
+            )
+
+            filters_note = ", ".join(
+                f"{k.replace('_', ' ')}: {v}"
+                for k, v in comp_result.get("filters_applied", {}).items()
+                if k != "city"
+            )
+            st.caption(
+                f"KNN on beds, capacity, bathrooms, and amenity count · "
+                f"Filters: {filters_note or 'city only'}"
+            )
 
     st.write("")
     st.write("")
