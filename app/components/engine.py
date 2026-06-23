@@ -18,6 +18,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+from airbnb_iip.agents.governance import apply_financial_guardrails
 from airbnb_iip.config import FINANCE, OCCUPANCY
 from airbnb_iip.data.occupancy import estimate_occupancy
 from airbnb_iip.models.price import get_price_predictor
@@ -136,6 +137,7 @@ class Scenario:
     monthly_seasonality: list[float] = field(default_factory=list)
     cost_breakdown: list[tuple[str, float]] = field(default_factory=list)
     feature_drivers: list[tuple[str, float]] = field(default_factory=list)
+    governance: dict = field(default_factory=dict)
 
 
 # ── Listings lookup (occupancy + price context) ───────────────────────────────
@@ -543,6 +545,20 @@ def compute_scenario(prop: Property) -> Scenario:
     drivers = _shap_drivers(prop)
     seasonality = _city_seasonality(prop.city.lower())
 
+    # Governance: bounds-check the financial outputs (negative revenue,
+    # implausible yield, inverted P10/P90, marginal recommendation) before
+    # they reach the UI. npv_sell_eur uses sell_net (post-CGT/fees net
+    # proceeds), matching the denominator the gross-yield guardrail expects.
+    governance_report = apply_financial_guardrails({
+        "recommendation": rec,
+        "nightly_price_eur": nightly,
+        "annual_gross_eur": gross,
+        "annual_net_eur": net_year,
+        "npv_sell_eur": sell_net,
+        "p10_eur": p10,
+        "p90_eur": p90,
+    })["governance"]
+
     return Scenario(
         recommendation=rec,
         confidence=confidence,
@@ -559,6 +575,7 @@ def compute_scenario(prop: Property) -> Scenario:
         monthly_seasonality=seasonality,
         cost_breakdown=costs,
         feature_drivers=drivers,
+        governance=governance_report,
     )
 
 
