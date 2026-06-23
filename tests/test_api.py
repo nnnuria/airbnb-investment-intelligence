@@ -50,6 +50,29 @@ def test_predict_price_minimal_spec_still_works():
     assert r.json()["price_per_night"] > 0
 
 
+def test_explain_price_returns_ranked_drivers():
+    r = client.post(
+        "/explain_price",
+        json={
+            "city": "Madrid",
+            "property_type_std": "Entire place",
+            "accommodates": 4,
+            "bedrooms": 2,
+            "bathrooms_number": 1,
+            "neighbourhood_cleansed": "Salamanca",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["price_per_night"] > 0
+    assert 1 <= len(body["drivers"]) <= 6
+    shap_values = [abs(d["shap_value"]) for d in body["drivers"]]
+    assert shap_values == sorted(shap_values, reverse=True)
+    for d in body["drivers"]:
+        assert d["direction"] in ("increases", "decreases")
+        assert (d["shap_value"] > 0) == (d["direction"] == "increases")
+
+
 def test_estimate_occupancy_matches_function():
     reviews = 1.5
     r = client.post("/estimate_occupancy", json={"reviews_per_month": reviews})

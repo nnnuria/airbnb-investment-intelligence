@@ -16,6 +16,7 @@ from api.dependencies import price_predictor
 from api.schemas import (
     EstimateOccupancyRequest,
     EstimateOccupancyResponse,
+    ExplainPriceResponse,
     PredictPriceRequest,
     PredictPriceResponse,
 )
@@ -34,6 +35,22 @@ def predict_price(
     return PredictPriceResponse(
         price_per_night=round(price, 2),
         city=req.city,
+        model=predictor.best_model,
+    )
+
+
+@router.post("/explain_price", response_model=ExplainPriceResponse)
+def explain_price(
+    req: PredictPriceRequest,
+    predictor: PricePredictor = Depends(price_predictor),
+) -> ExplainPriceResponse:
+    """SHAP feature attribution for the nightly-price prediction — the agent layer's "why"."""
+    spec = req.model_dump(exclude_none=True)
+    price = predictor.predict(spec)
+    drivers = predictor.explain(spec)
+    return ExplainPriceResponse(
+        price_per_night=round(price, 2),
+        drivers=drivers,
         model=predictor.best_model,
     )
 
