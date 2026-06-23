@@ -151,7 +151,7 @@ with tab_list:
             with cols[0]:
                 if st.button("Reopen", key=f"reopen_{rec['id']}", type="secondary",
                               use_container_width=True):
-                    from components.mocks import Property, Scenario
+                    from components.engine import Property, Scenario
                     st.session_state["property"] = Property(**rec["property"])
                     st.session_state["scenario"] = Scenario(**rec["scenario"])
                     st.switch_page("pages/1_New_Analysis.py")
