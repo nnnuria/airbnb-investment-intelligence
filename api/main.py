@@ -6,8 +6,8 @@ Docs:
     http://127.0.0.1:8000/docs
 
 Endpoint status:
-    LIVE   /predict_price, /estimate_occupancy, /estimate_revenue, /airbnb_vs_sell
-    STUB   /optimise  (flagged "_stub")
+    LIVE   /predict_price, /estimate_occupancy, /estimate_revenue,
+           /airbnb_vs_sell, /optimise
 """
 
 from __future__ import annotations
