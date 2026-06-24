@@ -18,10 +18,6 @@ Cities covered: **Madrid · Barcelona · Málaga** · Data snapshot: **14 Sep 20
 
 ## Product flows
 
-We build the **Airbnb-vs-sell decision** first (the primary deliverable); the **optimisation
-flow** is the natural second step for owners who choose Airbnb. UC1 (pre-purchase screening)
-is a stretch goal that comes almost for free once the revenue engine exists.
-
 | | Flow | Question answered |
 |---|---|---|
 | **Primary** ⭐ | Airbnb or sell? | *"I own a property — should I list it on Airbnb or sell it?"* → compares projected Airbnb net revenue against the property's indicative sale value, with break-even timelines, confidence bands, and a clear recommendation. |
@@ -34,66 +30,75 @@ is a stretch goal that comes almost for free once the revenue engine exists.
 
 ```
 Owner inputs property details
-   → Streamlit UI
-      → Coordinator agent (LangGraph) routes & aggregates
-         ├─ Market Analyst  → price + occupancy + Airbnb-vs-sell scenario engine (+ SHAP "why")
-         ├─ Regulatory (RAG) → municipal STR rules, with source citations
-         └─ Comparables (RAG)→ genuinely similar performing listings
+   → Streamlit UI (4 pages: New Analysis · Chat · Saved Properties · Optimisation)
+      → Analysis engine (app/components/engine.py) orchestrates
+         ├─ Price model       → city-specific LightGBM (Madrid / Barcelona / Málaga) + SHAP
+         ├─ Sale model        → Idealista-backed district price-per-m² regression
+         ├─ Finance engine    → Airbnb net revenue vs. sell scenario (P10/P50/P90 bands)
+         ├─ Market Analyst    → narrates the comparison, surfaces SHAP "why"
+         ├─ Regulatory (RAG)  → municipal STR rules with source citations
+         └─ Comparables       → genuinely similar performing listings (KNN)
       → explainable brief: numbers from the models, narration from the LLM,
         with uncertainty bands and cited sources
 
    [If owner chooses Airbnb]
       → Optimisation flow
          ├─ Feature gap analysis vs top-performing comparables
-         ├─ Amenity recommendations (occupancy uplift + nightly-rate impact)
-         ├─ Renovation / remodelling opportunities with cost-vs-revenue trade-offs
+         ├─ Amenity bundle recommendations
          └─ Prioritised action list with estimated revenue impact
 ```
 
-Two cross-cutting layers wrap the whole stack: **MLOps** (MLflow · FastAPI · Docker · GitHub
-Actions · Evidently) and **Governance / Trusted AI** (guardrails · citations · uncertainty ·
-human-in-the-loop · model cards · eval harness).
+A **Governance layer** wraps every agent response: output-bounds guardrails,
+mandatory "indicative, not financial advice" framing, and model cards per model.
 
-Full diagram: [`docs/architecture.svg`](docs/architecture.svg).
+Full diagram: [`docs/Architecture_Diagram.svg`](docs/Architecture_Diagram.svg).
 
 ---
 
 ## Tech stack
 
-- **Data & ML:** pandas, geopandas, scikit-learn, XGBoost / LightGBM, SHAP, Prophet / ARIMA, mlxtend (Apriori), NLTK / spaCy (NLP)
-- **AI layer:** LangGraph (orchestration), FAISS (vector store), RAG, an LLM API for narration
-- **MLOps:** MLflow (tracking + registry), FastAPI (serving), Docker, GitHub Actions (CI/CD), pytest, Evidently (drift)
-- **UI:** Streamlit
+- **Data & ML:** pandas, scikit-learn (HistGradientBoosting / LightGBM), SHAP, statsmodels, scipy, plotly
+- **AI layer:** LangChain + FAISS (RAG), sentence-transformers, langchain-google-genai (Gemini narration), LangGraph
+- **API:** FastAPI (model serving — `/predict_price`, `/estimate_occupancy`, `/estimate_revenue`, `/airbnb_vs_sell`)
+- **UI:** Streamlit (4-page app)
+- **MLOps:** pytest, GitHub Actions (CI/CD)
 
 ---
 
 ## Repository structure
 
 ```
-src/airbnb_iip/   installable package — all reusable logic
-  config.py       project settings: paths, finance & occupancy assumptions
-  data/           loader · clean · abt (build_abt)
-  features/       engineering · occupancy (SF model) · selection (VIF/RFE)
-  models/         price · demand · segmentation · nlp
-  finance/        scenarios — pure functions, the UC2 core
-  agents/         coordinator · market_analyst · regulatory · comparables
-api/              FastAPI model services
-app/              Streamlit application
-scripts/          download_data · build_abts · train_all
-notebooks/        exploration only (logic belongs in src/)
-data/             raw · interim · processed · external · regulatory · sample  (mostly gitignored)
-docs/             schema.md (data contract) · model_cards · architecture.svg
-tests/            pytest suite
+src/airbnb_iip/       installable package — all reusable logic
+  config.py           project settings: paths, finance & occupancy assumptions
+  data/               cleaning · abt · occupancy · idealista_sale · scrapers/
+  features/           amenities · density · seasonality
+  models/             price (city-specific + general) · sale (Idealista-backed)
+  finance/            costs · scenarios — pure functions, the core engine
+  agents/             market_analyst · regulatory (RAG) · comparables · governance
+api/                  FastAPI model services
+  routers/            predict · revenue · optimise
+app/                  Streamlit application
+  Home.py             landing page
+  pages/              1_New_Analysis · 2_Chat · 3_Saved_Properties · 4_Optimisation
+  components/         branding · engine · storage · styling
+models/               trained artefacts: price_city_*.pkl · sale_best_model.pkl · …
+scripts/              scrape_idealista · make_price_notebook · make_sell_model_notebook
+notebooks/            price_ml_model · price_ml_model_comparison · sell_price_eda ·
+                      sell_price_model · segmentation · amenity_feature_engineering · …
+config/               config.yaml (editable cost assumptions)
+data/                 raw · interim · processed · external · regulatory · sample  (mostly gitignored)
+docs/                 architecture · DATA_FINDINGS · EDA · FEATURE_ENGINEERING ·
+                      model_cards/ · regulatory/ · structure
+tests/                pytest suite (14 modules)
 ```
 
-See **[`docs/structure.md`](docs/structure.md)** for the full conventions (the *how we build*
-reference) and **`schema.md`** for the ABT data contract.
+See **[`docs/structure.md`](docs/structure.md)** for engineering conventions.
 
 ---
 
 ## Getting started
 
-**Prerequisites:** Python 3.11, Git, Docker (for the demo runtime).
+**Prerequisites:** Python 3.11, Git.
 
 ```bash
 # 1. Clone and create an environment
@@ -105,37 +110,24 @@ pip install -r requirements.txt -r requirements-dev.txt
 pip install -e .
 
 # 3. Configure secrets
-cp .env.example .env        # then add your LLM API key
-
-# 4. Sanity check
-python -c "import airbnb_iip; print('ok')"
+cp .env.example .env        # add GOOGLE_API_KEY (Gemini) and APIFY_API_TOKEN
 ```
 
-> If `geopandas` or `prophet` fight pip on your machine, install those two via conda — it's the
-> reliable escape hatch.
+> If `geopandas` fights pip on your machine, install it via conda first.
 
 ---
 
 ## Running the project
 
 ```bash
-# Download the raw datasets (Inside Airbnb + external indices)
-python scripts/download_data.py
+# Run the Streamlit app (primary interface)
+streamlit run app/Home.py              # → http://localhost:8501
 
-# Build the Analytical Base Table (cleaned, feature-engineered, modelling-ready) per city
-python scripts/build_abts.py            # writes data/processed/<city>.parquet
+# Run the FastAPI model-serving layer
+uvicorn api.main:app --reload          # → http://localhost:8000/docs
 
-# Train models and log everything to MLflow
-python scripts/train_all.py
-
-# Inspect experiments and the model registry
-mlflow ui                                # → http://localhost:5000
-
-# Run the full app (API + UI together)
-docker-compose up
-
-# …or run the UI alone in dev
-streamlit run app/streamlit_app.py
+# Scrape fresh Idealista sale/rent data
+python scripts/scrape_idealista.py    # requires APIFY_API_TOKEN in .env
 ```
 
 **For the KPMG demo:** agent/LLM outputs are pre-cached as JSON and the app runs in cached mode
@@ -146,16 +138,14 @@ by default (a "live mode" toggle exists). Never rely on live LLM calls during th
 ## Data
 
 - **Inside Airbnb** (public): detailed `listings.csv.gz`, `calendar.csv.gz`, `reviews.csv.gz`,
-  and `neighbourhoods.geojson` per city. Not committed — fetched by `scripts/download_data.py`.
-- **External market data**: district-level **sale price per m²** curated from published/open-data
-  sources (not scraped). Used to model the sell-side of the Airbnb-vs-sell comparison. Source +
-  date documented in `data/external/`.
-- **Regulatory corpus** (RAG): official municipal short-term-rental rules per city. These change
-  — always verify against current official sources and cite them in output.
+  and `neighbourhoods.geojson` per city. Not committed — fetch manually from insideairbnb.com.
+- **Idealista** (scraped): district-level sale and rent listings for all three cities, collected
+  via the Apify actor. Anchors the sell scenario with real €/m² data.
+- **Regulatory corpus** (RAG): official municipal short-term-rental rules per city stored in
+  `docs/regulatory/`. These change — always verify against current official sources.
 
-The occupancy/revenue estimate uses the documented **San Francisco model** (bookings inferred
-from review frequency, not naïve calendar availability) and is reported as **P10/P50/P90 bands**,
-not a single point estimate.
+The occupancy/revenue estimate uses the **San Francisco model** (bookings inferred from review
+frequency, not naïve calendar availability) and is reported as **P10/P50/P90 bands**.
 
 ---
 
@@ -164,17 +154,12 @@ not a single point estimate.
 A scraper agent collects Idealista apartment listings for Madrid, Barcelona, and Málaga, in
 both **sale (venta)** and **rent (alquiler)** flavours, via the
 [`igolaizola/idealista-scraper`](https://apify.com/igolaizola/idealista-scraper) Apify actor.
-It calls the Apify HTTP API programmatically (no Apify CLI required), streams the dataset
-to disk as JSON Lines, and tags each record with `_city` / `_operation` / `_scraped_at` for
-downstream joins.
 
-**Setup.** Add your Apify token to `.env` (gitignored; template in `.env.example`):
+**Setup.** Add your Apify token to `.env`:
 
 ```bash
 APIFY_API_TOKEN=apify_api_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
-
-The token is read from the environment — it is never hardcoded or accepted on the command line.
 
 **Run.**
 
@@ -185,36 +170,12 @@ python scripts/scrape_idealista.py
 # A single slice
 python scripts/scrape_idealista.py --cities madrid --operations rent
 
-# Push past Idealista's ~1,800-per-query cap — triggers the actor's
-# sub-location splitting (slower; ordering changes).
+# Push past Idealista's ~1,800-per-query cap
 python scripts/scrape_idealista.py --max-items 5000
 ```
 
-**Outputs.** One JSONL file per (city, operation), under
+**Outputs.** One JSONL file per (city, operation) under
 `data/raw/idealista/<city>/<operation>_<YYYY-MM-DD>.jsonl` (git-ignored).
-Example layout after a full run on 2026-06-10:
-
-```
-data/raw/idealista/
-├── madrid/
-│   ├── sale_2026-06-10.jsonl
-│   └── rent_2026-06-10.jsonl
-├── barcelona/
-│   ├── sale_2026-06-10.jsonl
-│   └── rent_2026-06-10.jsonl
-└── malaga/
-    ├── sale_2026-06-10.jsonl
-    └── rent_2026-06-10.jsonl
-```
-
-**What's in each record.** Per-listing fields include identifiers (`propertyCode`, `url`),
-pricing (`price`, `pricePerM2`), size and layout (`size`, `rooms`, `bathrooms`),
-type (`propertyType`, `homeType`, `floor`), location (`address`, `district`,
-`neighborhood`, `municipality`, `province`, `latitude`, `longitude`), narrative
-(`title`, `description`), media (`images`, `virtualTour`), amenity tags (`features`),
-and advertiser info (`agency`, `phone`). Full canonical schema in
-[`docs/idealista_schema.md`](docs/idealista_schema.md); a synthetic three-record
-sample lives at [`Data/sample/idealista_sample.jsonl`](Data/sample/idealista_sample.jsonl).
 
 **Loading into pandas.**
 
@@ -225,34 +186,59 @@ df = load_jsonl_as_dataframe("data/raw/idealista/madrid/sale_2026-06-10.jsonl")
 # canonical snake_case columns: listing_id, price_eur, size_m2, latitude, …
 ```
 
-**Limits and cost.** Idealista shows ~1,800 results per search query; the actor caps a
-single job at this naturally. Set `--max-items` above 2,500 to trigger the actor's
-automatic sub-location splitting and go beyond the cap (slower; ordering changes).
-The actor itself is a paid Apify actor — check pricing on its store page before large
-runs and start with a small `--max-items` to verify behaviour.
+Full canonical schema in [`docs/idealista_schema.md`](docs/idealista_schema.md).
+
+---
+
+## ML models
+
+### Nightly price model
+
+Three city-specific LightGBM models (Madrid · Barcelona · Málaga), selected over a single
+pooled model by the approach comparison study
+(`notebooks/price_ml_model_comparison.ipynb`):
+
+| Approach | Test R² | RMSE | MAE |
+|---|---|---|---|
+| City-specific (production) | **0.814** | €68.5 | €30.8 |
+| General pooled | 0.810 | €69.5 | €31.6 |
+
+Top SHAP drivers: `property_type_std`, `accommodates`, `minimum_nights`,
+`neighbourhood_target_enc`. Artefacts in `models/price_city_*.pkl`.
+
+### Sale price model
+
+Regression model backed by Idealista listings, predicting property sale value from size,
+district, property type, and condition. Artefact in `models/sale_best_model.pkl`.
+
+Model cards: [`docs/model_cards/price_model.md`](docs/model_cards/price_model.md) ·
+[`docs/model_cards/sale_model.md`](docs/model_cards/sale_model.md).
 
 ---
 
 ## Master-technique coverage
 
-The project deliberately exercises the full master curriculum: feature engineering & ABT design,
+The project exercises the full master curriculum: feature engineering & ABT design,
 **VIF** and **RFE** feature selection, **PCA/Factor Analysis**, segmentation (**K-means /
 hierarchical / DBSCAN** with silhouette & elbow), **association analysis (Apriori)** for amenity
-bundle recommendations, linear/OLS regression, **XGBoost/LightGBM** with SHAP, **Naïve Bayes +
-TF-IDF** sentiment for guest review analysis, **KNN** for comparable listings, time series
-(**Prophet/ARIMA**), and a complete MLOps + RAG + agent-orchestration stack. The full mapping is
-in [`docs/Capstone_Plan.md`](docs/Capstone_Plan.md).
+bundle recommendations, linear/OLS regression, **LightGBM** with SHAP, **Naïve Bayes +
+TF-IDF** sentiment for guest review analysis, **KNN** for comparable listings, and a complete
+RAG + agent-orchestration stack. The full mapping is in
+[`docs/UC2_Ordered_Task_Backlog.md`](docs/UC2_Ordered_Task_Backlog.md).
 
 ---
 
 ## Project documents
 
-- [`docs/Capstone_Plan.md`](docs/Capstone_Plan.md) — full plan + master-coverage matrix
+- [`docs/INVESTMENT_DECISION_FRAMEWORK.md`](docs/INVESTMENT_DECISION_FRAMEWORK.md) — NPV comparison design, cost model, ML model plan
 - [`docs/UC2_Ordered_Task_Backlog.md`](docs/UC2_Ordered_Task_Backlog.md) — ordered build tasks (primary + optimisation flows)
 - [`docs/structure.md`](docs/structure.md) — setup & engineering conventions
-- [`docs/architecture.svg`](docs/architecture.svg) — system architecture diagram
-- [`docs/schema.md`](docs/schema.md) — the ABT data contract
-- [`docs/DATA_FINDINGS.md`](docs/DATA_FINDINGS.md) — calendar, listings, sentiment analysis, findings and recommendations
+- [`docs/Architecture_Diagram.svg`](docs/Architecture_Diagram.svg) — system architecture diagram
+- [`docs/DATA_FINDINGS.md`](docs/DATA_FINDINGS.md) — calendar, listings, and sentiment findings
+- [`docs/EDA.md`](docs/EDA.md) — exploratory data analysis notes
+- [`docs/FEATURE_ENGINEERING.md`](docs/FEATURE_ENGINEERING.md) — feature engineering decisions
+- [`docs/idealista_schema.md`](docs/idealista_schema.md) — Idealista scraper data contract
+- [`docs/model_cards/`](docs/model_cards/) — model cards for price and sale models
 
 ---
 
