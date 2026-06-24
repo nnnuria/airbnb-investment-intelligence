@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 from airbnb_iip.agents.governance import apply_financial_guardrails
 from airbnb_iip.config import FINANCE, OCCUPANCY
 from airbnb_iip.data.occupancy import estimate_occupancy
-from airbnb_iip.models.price import get_price_predictor
+from airbnb_iip.models.price import get_city_price_predictor
 from airbnb_iip.models.sale import get_sale_predictor
 from airbnb_iip.finance.costs import (
     annual_gross_revenue,
@@ -86,8 +86,8 @@ _PRICE_HAT_PATH = (
 )
 _MIN_COMPARABLES = 5
 
-# Amenities that the LightGBM price model (29 selected features) did NOT include.
-# Their marginal effect is captured here from data-driven residuals at runtime.
+# Amenities not in the by-city LightGBM model's RFE-selected feature set.
+# Their marginal effect is captured from data-driven residuals at runtime.
 _NON_MODEL_AMENITY_COLS: tuple[str, ...] = (
     "has_balcony", "has_elevator", "has_pool", "has_parking", "has_workspace",
 )
@@ -392,7 +392,7 @@ def predict_nightly_price(prop: Property) -> float:
         "instant_bookable": 1,
         **ctx,
     }
-    base = get_price_predictor().predict(spec)
+    base = get_city_price_predictor().predict({**spec, "city": prop.city})
     adjustment, _ = _amenity_residual_adjustment(prop)
     return round(max(base + adjustment, 0.0), 2)
 
@@ -419,28 +419,21 @@ def _shap_drivers(prop: Property) -> list[tuple[str, float]]:
         **ctx,
     }
 
-    # SHAP from the LightGBM model (29 selected features)
+    # SHAP from the city-specific LightGBM model
     shap_contributions: dict[str, float] = {}
     total_abs = 1.0
     try:
-        predictor = get_price_predictor()
-        raw_df = pd.DataFrame([spec])
-        feats = predictor._build_features_frame(raw_df)
-        for col in predictor.features:
-            fallback = predictor._nbh_default if col == "neighbourhood_target_enc" else 0.0
-            feats[col] = feats[col].fillna(predictor.medians.get(col, fallback))
-
-        ordered = feats[predictor.features]
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            shap_raw = predictor.model.predict(ordered, pred_contrib=True)[0, :-1]
-
-        total_abs = float(np.abs(shap_raw).sum()) or 1.0
-        for feat, val in zip(predictor.features, shap_raw):
-            label = _PRICE_FEATURE_LABELS.get(feat)
+        predictor = get_city_price_predictor()
+        city_spec = {**spec, "city": prop.city}
+        shap_entries = predictor.explain(city_spec, top_n=len(predictor.features))
+        total_abs = sum(abs(e["shap_value"]) for e in shap_entries) or 1.0
+        for entry in shap_entries:
+            label = _PRICE_FEATURE_LABELS.get(entry["feature"])
             if label is None:
                 continue
-            shap_contributions[label] = shap_contributions.get(label, 0.0) + float(val) / total_abs
+            shap_contributions[label] = (
+                shap_contributions.get(label, 0.0) + entry["shap_value"] / total_abs
+            )
     except Exception as exc:
         logger.warning("SHAP computation failed: %s", exc)
 
@@ -449,7 +442,8 @@ def _shap_drivers(prop: Property) -> list[tuple[str, float]]:
     # rate — comparable to the SHAP fractions that sum to 1.0 across features.
     _, amenity_breakdown = _amenity_residual_adjustment(prop)
     if amenity_breakdown:
-        base_price = float(get_price_predictor().predict({
+        base_price = float(get_city_price_predictor().predict({
+            "city": prop.city,
             "accommodates": prop.accommodates,
             "bedrooms": prop.bedrooms,
             "bathrooms_number": prop.bathrooms,

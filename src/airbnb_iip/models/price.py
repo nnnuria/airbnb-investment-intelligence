@@ -1,32 +1,30 @@
 """Nightly-price model inference service.
 
-Loads the trained LightGBM nightly-price model plus its preprocessing
-artefacts (``models/price_*.pkl`` / ``price_feature_cols.json``) and exposes a
-single :meth:`PricePredictor.predict` entry point that turns a *partial*
-property spec into a predicted Airbnb nightly price in EUR.
+Exposes two predictors:
 
-This deliberately lives in the package (not in ``api/``) so the FastAPI
-endpoints **and** the agent layer can both call the same service — the
-architecture's "agents call services, not notebooks" rule.
+* :class:`PricePredictor` — original single general model (``price_best_model.pkl``).
+* :class:`CityPricePredictor` — **production model**: three city-specific LightGBM
+  models (Madrid / Barcelona / Málaga) selected by the approach comparison study
+  (``notebooks/price_ml_model_comparison.ipynb``).  By-city beats the general model
+  on R² (0.8137 vs 0.8096), RMSE (€68.5 vs €69.5) and MAE (€30.8 vs €31.6).
 
-Preprocessing contract
-=======================
-Replicated verbatim from ``notebooks/price_ml_model.ipynb`` so the served
-predictions match the offline model:
+Both classes share the same preprocessing contract (neighbourhood target-encoding,
+category label-encoding, median imputation for missing fields, unscaled features,
+``np.expm1`` back-transform from log1p space).
+
+Preprocessing contract (city models)
+======================================
+Replicated from ``notebooks/price_ml_model_comparison.ipynb``:
 
 1. Categorical integer-encoding for ``property_type_std`` and
-   ``host_response_time`` via the saved ``price_cat_encoders.pkl`` maps.
-2. Neighbourhood **target-encoding**: ``neighbourhood_target_enc`` is produced
-   by mapping ``neighbourhood_cleansed`` (a name like "Salamanca") through the
-   saved encoder; unknown neighbourhoods fall back to the global mean.
-3. Missing numeric features are imputed with the column **median**, derived
-   once at load time from the processed listings parquet.
-4. Features are ordered to ``selected_features`` and passed **unscaled** to
-   ``model.predict``. The production LightGBM was trained on unscaled
-   features; the saved ``StandardScaler`` applied only to the linear baseline
-   models, so applying it here would flatten predictions to a near-constant.
-5. The model targets ``log1p(price)``; predictions are back-transformed with
-   ``np.expm1`` to EUR/night.
+   ``host_response_time`` via ``price_city_encoders.pkl``.
+2. Neighbourhood **target-encoding**: ``neighbourhood_target_enc`` mapped from
+   ``neighbourhood_cleansed`` through the saved encoder; unknown → global mean.
+3. Missing numeric features imputed with column medians from the segmented
+   listings parquet (the training data for the city models).
+4. Features ordered to ``city_features`` (RFE-selected minus city indicators)
+   and passed **unscaled** to ``model.predict``.
+5. Model targets ``log1p(price)``; back-transformed with ``np.expm1``.
 """
 
 from __future__ import annotations
@@ -45,6 +43,7 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_MODEL_DIR = ROOT / "models"
 DEFAULT_LISTINGS = ROOT / "Data" / "processed" / "listings_with_price_hat.parquet"
+DEFAULT_SEGMENTED_LISTINGS = ROOT / "Data" / "processed" / "listings_segmented.parquet"
 
 # Features (within selected_features) that carry an integer category map in
 # price_cat_encoders.pkl. city / room_type are encoded too but were dropped by
@@ -54,6 +53,14 @@ INT_ENCODED: tuple[str, ...] = ("property_type_std", "host_response_time")
 # Target-encoded neighbourhood: the model feature vs. its raw source column.
 NEIGHBOURHOOD_FEATURE = "neighbourhood_target_enc"
 NEIGHBOURHOOD_SOURCE = "neighbourhood_cleansed"
+
+# City name → model filename key (must match what the notebook saved).
+_CITY_MODEL_FILES: dict[str, str] = {
+    "Madrid"   : "price_city_madrid_model.pkl",
+    "Barcelona": "price_city_barcelona_model.pkl",
+    "Málaga"   : "price_city_malaga_model.pkl",
+    "Malaga"   : "price_city_malaga_model.pkl",  # ASCII fallback
+}
 
 
 class PricePredictor:
@@ -199,3 +206,160 @@ class PricePredictor:
 def get_price_predictor() -> PricePredictor:
     """Process-wide singleton — loads artefacts once."""
     return PricePredictor()
+
+
+# ── City-specific predictor (production model) ────────────────────────────────
+
+class CityPricePredictor:
+    """By-city LightGBM price predictor — routes each call to the city model.
+
+    Selected over the general model by ``price_ml_model_comparison.ipynb``:
+      R² 0.8137 vs 0.8096 | RMSE €68.5 vs €69.5 | MAE €30.8 vs €31.6.
+
+    Artefacts required in ``model_dir``:
+      * ``price_city_artefacts.json``  — feature list + city→filename map
+      * ``price_city_encoders.pkl``    — neighbourhood target map + cat encoders
+      * ``price_city_{city}_model.pkl`` — one per city (Madrid/Barcelona/Málaga)
+
+    Run ``notebooks/price_ml_model_comparison.ipynb`` to regenerate all three.
+    Falls back to :class:`PricePredictor` (general model) if artefacts are absent.
+    """
+
+    def __init__(
+        self,
+        model_dir: Path | str = DEFAULT_MODEL_DIR,
+        listings_path: Path | str = DEFAULT_SEGMENTED_LISTINGS,
+    ) -> None:
+        import joblib
+
+        model_dir = Path(model_dir)
+        artefacts_path = model_dir / "price_city_artefacts.json"
+        encoders_path  = model_dir / "price_city_encoders.pkl"
+
+        if not artefacts_path.exists() or not encoders_path.exists():
+            logger.warning(
+                "City model artefacts not found in %s — falling back to general model. "
+                "Re-run notebooks/price_ml_model_comparison.ipynb to generate them.",
+                model_dir,
+            )
+            self._fallback = get_price_predictor()
+            return
+
+        self._fallback = None
+        artefacts = json.loads(artefacts_path.read_text())
+        self.features: list[str] = artefacts["city_features"]
+        self.best_model: str = artefacts.get("best_model", "LightGBM")
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            encoders: dict = joblib.load(encoders_path)
+            city_files: dict[str, str] = artefacts.get("city_model_files", {})
+            self._models: dict[str, Any] = {}
+            for city, fname in city_files.items():
+                path = model_dir / fname
+                if path.exists():
+                    self._models[city] = joblib.load(path)
+                else:
+                    logger.warning("City model file not found: %s", path)
+
+        self._nbh_map: dict[str, float] = encoders.get(NEIGHBOURHOOD_SOURCE, {})
+        self._nbh_default = (
+            float(np.mean(list(self._nbh_map.values()))) if self._nbh_map else 0.0
+        )
+        self._encoders = encoders
+        self.medians: dict[str, float] = self._compute_medians(Path(listings_path))
+        logger.info(
+            "CityPricePredictor ready: %s, %d features, %d city models loaded",
+            self.best_model, len(self.features), len(self._models),
+        )
+
+    # ── public API ────────────────────────────────────────────────────────────
+
+    def predict(self, prop: Mapping[str, Any]) -> float:
+        """Predict nightly price (EUR) routing to the appropriate city model."""
+        if self._fallback is not None:
+            return self._fallback.predict(prop)
+
+        city = str(prop.get("city", ""))
+        model = self._models.get(city) or self._models.get(
+            next((k for k in self._models if k.lower() == city.lower()), ""), None
+        )
+        if model is None:
+            logger.warning("No city model for '%s' — using first available model.", city)
+            model = next(iter(self._models.values()))
+
+        ordered = self._prepare_ordered_frame(prop)
+        y_log = float(model.predict(ordered)[0])
+        return float(np.expm1(y_log))
+
+    def explain(self, prop: Mapping[str, Any], top_n: int = 6) -> list[dict[str, Any]]:
+        """SHAP attribution from the city-specific model."""
+        if self._fallback is not None:
+            return self._fallback.explain(prop, top_n)
+
+        import shap
+
+        city  = str(prop.get("city", ""))
+        model = self._models.get(city) or next(iter(self._models.values()))
+        ordered = self._prepare_ordered_frame(prop)
+
+        explainer   = shap.TreeExplainer(model)
+        shap_values = np.asarray(explainer.shap_values(ordered))[0]
+        ranked = sorted(zip(self.features, shap_values.tolist()), key=lambda kv: -abs(kv[1]))[:top_n]
+        return [
+            {"feature": f, "shap_value": round(v, 4),
+             "direction": "increases" if v > 0 else "decreases"}
+            for f, v in ranked
+        ]
+
+    # ── internals ───────────────────────────────────────────────────────────
+
+    def _prepare_ordered_frame(self, prop: Mapping[str, Any]):
+        import pandas as pd
+
+        feats = self._build_features_frame(pd.DataFrame([dict(prop)]))
+        for col in self.features:
+            fallback = self._nbh_default if col == NEIGHBOURHOOD_FEATURE else 0.0
+            feats[col] = feats[col].fillna(self.medians.get(col, fallback))
+        return feats[self.features]
+
+    def _build_features_frame(self, df):
+        import pandas as pd
+
+        out = pd.DataFrame(index=df.index)
+        for feat in self.features:
+            if feat == NEIGHBOURHOOD_FEATURE:
+                out[feat] = (
+                    df[NEIGHBOURHOOD_SOURCE].map(self._nbh_map)
+                    if NEIGHBOURHOOD_SOURCE in df.columns
+                    else np.nan
+                )
+            elif feat in self._encoders:
+                enc = self._encoders[feat]
+                out[feat] = df[feat].map(enc) if feat in df.columns else np.nan
+            elif feat in df.columns:
+                series = df[feat]
+                if series.dtype == bool:
+                    series = series.astype(int)
+                out[feat] = pd.to_numeric(series, errors="coerce")
+            else:
+                out[feat] = np.nan
+        return out
+
+    def _compute_medians(self, path: Path) -> dict[str, float]:
+        import pandas as pd
+
+        if not path.exists():
+            logger.warning("Listings parquet not found at %s — medians default to 0.0.", path)
+            return {}
+        source_cols = {f for f in self.features if f != NEIGHBOURHOOD_FEATURE} | {NEIGHBOURHOOD_SOURCE}
+        df = pd.read_parquet(path)
+        present = [c for c in source_cols if c in df.columns]
+        feats = self._build_features_frame(df[present])
+        return feats.median(numeric_only=True).to_dict()
+
+
+@lru_cache(maxsize=1)
+def get_city_price_predictor() -> CityPricePredictor:
+    """Process-wide singleton for the by-city predictor — loads artefacts once."""
+    return CityPricePredictor()
