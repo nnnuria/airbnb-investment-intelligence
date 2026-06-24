@@ -1,0 +1,4 @@
+city,reviews_scored,lang_split,label_split,nb_accuracy,nb_f1_macro,corr_sentiment_vs_rating
+madrid,40000,"{'es': 0.416, 'en': 0.387, 'fr': 0.068, 'pt': 0.036, 'it': 0.023, 'de': 0.016}","{'positive': 0.606, 'neutral': 0.36, 'negative': 0.034}",0.951,0.732,0.225
+barcelona,40000,"{'en': 0.591, 'es': 0.123, 'fr': 0.109, 'de': 0.04, 'it': 0.031, 'pt': 0.017}","{'positive': 0.717, 'neutral': 0.252, 'negative': 0.031}",0.939,0.671,0.287
+malaga,40000,"{'en': 0.467, 'es': 0.22, 'fr': 0.101, 'de': 0.065, 'nl': 0.037, 'it': 0.032}","{'positive': 0.648, 'neutral': 0.32, 'negative': 0.032}",0.943,0.719,0.28
