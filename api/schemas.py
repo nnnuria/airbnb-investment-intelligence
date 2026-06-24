@@ -152,26 +152,50 @@ class AirbnbVsSellResponse(BaseModel):
     note: str = "Stub — wire to airbnb_iip.finance.scenarios + sale-value service."
 
 
-# ── /optimise (stub) ─────────────────────────────────────────────────────────────
+# ── /optimise (live) ─────────────────────────────────────────────────────────────
 
 class OptimiseRequest(BaseModel):
+    """Property spec for the revenue-optimisation plan.
+
+    ``extra="allow"`` carries the current amenity flags (``has_ac`` …, truthy =
+    already installed) and an optional ``projected_annual_nights`` override.
+    """
+
     model_config = ConfigDict(extra="allow")
 
     city: Optional[str] = None
+    district: Optional[str] = None
     neighbourhood_cleansed: Optional[str] = None
+    room_type: Optional[str] = None
+    accommodates: Optional[int] = None
+    bedrooms: Optional[int] = None
+    bathrooms: Optional[float] = None
 
 
 class OptimiseAction(BaseModel):
     action: str
-    estimated_uplift_eur: float
-    estimated_cost_eur: float
-    category: str
+    annual_uplift_eur: float
+    investment_eur: float
+    payback_months: float
+    confidence: str            # high | medium | low
+    method: str                # counterfactual | residual
+    lift: Optional[float] = None
+    rationale: str
 
 
 class OptimiseResponse(BaseModel):
     actions: list[OptimiseAction]
-    stub: bool = Field(default=True, alias="_stub")
-    note: str = "Stub — wire to the optimisation flow (Apriori + feature gap)."
+    city: str
+    district: str
+    room_type: str
+    peer_n: int
+    peer_median_revenue_eur: float
+    peer_target_revenue_eur: float
+    gap_to_top_quartile_eur: float
+    projected_annual_nights: int
+    disclaimer: str = "Indicative only — uplift estimates are modelled, not guaranteed."
+    stub: bool = Field(default=False, alias="_stub")
+    note: str = "Live — airbnb_iip.agents.optimisation (counterfactual + residual + Apriori)."
 
 
 # ── health ─────────────────────────────────────────────────────────────────────

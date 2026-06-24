@@ -666,69 +666,9 @@ def _city_seasonality(city: str) -> list[float]:
 
 
 # ── Optimisation ──────────────────────────────────────────────────────────────
-
-@dataclass
-class Improvement:
-    name: str
-    investment_eur: float
-    monthly_revenue_uplift_eur: float
-    payback_months: float
-    confidence: Literal["high", "medium", "low"]
-    rationale: str
-
-
-def suggest_improvements(prop: Property, scen: Scenario) -> list[Improvement]:
-    """Improvement ideas ranked by payback period."""
-    items: list[Improvement] = []
-    rev_month = scen.net_revenue_year_eur / 12
-
-    if not prop.has_ac:
-        uplift = rev_month * 0.06
-        items.append(Improvement(
-            "Install air conditioning", 1800,
-            round(uplift, 0),
-            round(1800 / uplift, 1) if uplift > 0 else 99,
-            "high",
-            "AC is among the top three amenities by booking lift in warm-climate "
-            "markets; comparable listings without AC lose 5–8% of bookings in peak months.",
-        ))
-    if not prop.has_workspace:
-        uplift = rev_month * 0.04
-        items.append(Improvement(
-            "Add a dedicated workspace", 350,
-            round(uplift, 0),
-            round(350 / uplift, 1) if uplift > 0 else 99,
-            "high",
-            "Workspace amenity unlocks the long-stay segment (28+ nights) and "
-            "tends to lift weekday occupancy.",
-        ))
-    if not prop.has_balcony:
-        uplift = rev_month * 0.03
-        items.append(Improvement(
-            "Highlight outdoor space in listing", 120,
-            round(uplift, 0),
-            round(120 / uplift, 1) if uplift > 0 else 99,
-            "medium",
-            "If you have any patio, balcony, or terrace, ensuring it shows in "
-            "photos is a cheap revenue lever.",
-        ))
-    items.append(Improvement(
-        "Professional photography refresh", 250,
-        round(rev_month * 0.05, 0),
-        round(250 / max(rev_month * 0.05, 1), 1),
-        "high",
-        "Improving listing photos is the single highest-ROI change short of a renovation.",
-    ))
-    items.append(Improvement(
-        "Adopt dynamic pricing (PriceLabs / Wheelhouse)", 20 * 12,
-        round(rev_month * 0.07, 0),
-        round((20 * 12) / max(rev_month * 0.07, 1), 1),
-        "medium",
-        "Algorithmic pricing typically lifts revenue 5–10% by capturing event "
-        "spikes and softening shoulder months.",
-    ))
-    items.sort(key=lambda x: x.payback_months)
-    return items
+# The revenue-optimisation flow now lives in airbnb_iip.agents.optimisation
+# (per-amenity counterfactual / residual uplift + Apriori rules + peer-gap), and
+# is consumed directly by pages/4_Optimisation.py and the /optimise API endpoint.
 
 
 # ── Chat ──────────────────────────────────────────────────────────────────────
@@ -818,8 +758,8 @@ def chat_reply(user_msg: str, scen: Scenario | None) -> str:
 
 __all__ = [
     "CITIES", "CITY_LABELS", "ROOM_TYPES",
-    "Property", "Scenario", "Improvement",
+    "Property", "Scenario",
     "get_city_districts",
     "compute_scenario", "predict_nightly_price", "predict_sale_value",
-    "reviews_per_month_from_data", "suggest_improvements", "chat_reply",
+    "reviews_per_month_from_data", "chat_reply",
 ]

@@ -89,12 +89,36 @@ def test_estimate_occupancy_caps_at_ceiling():
     assert r.json()["occupancy_rate"] <= 0.70
 
 
-def test_stub_endpoints_are_flagged():
-    # /optimise is still a stub (waits on the optimisation flow); the finance
-    # endpoints below are now live.
-    r = client.post("/optimise", json={"city": "Madrid"})
+def test_optimise_is_live_and_ranked():
+    r = client.post(
+        "/optimise",
+        json={
+            "city": "Madrid",
+            "district": "Salamanca",
+            "room_type": "Entire home/apt",
+            "accommodates": 4,
+            "bedrooms": 2,
+            "bathrooms": 1.0,
+            "has_elevator": True,  # everything else treated as a candidate
+        },
+    )
     assert r.status_code == 200
-    assert r.json().get("_stub") is True
+    body = r.json()
+    assert body["_stub"] is False
+    assert body["peer_n"] > 0
+    assert body["projected_annual_nights"] > 0
+    actions = body["actions"]
+    assert actions, "expected at least one recommendation"
+    # Ranked by payback (ascending) and every action is positive + costed.
+    paybacks = [a["payback_months"] for a in actions]
+    assert paybacks == sorted(paybacks)
+    for a in actions:
+        assert a["annual_uplift_eur"] > 0
+        assert a["investment_eur"] > 0
+        assert a["confidence"] in ("high", "medium", "low")
+        assert a["method"] in ("counterfactual", "residual")
+    # The owner already has an elevator, so it must not be recommended.
+    assert all("elevator" not in a["action"].lower() for a in actions)
 
 
 def test_estimate_revenue_is_live_and_coherent():
