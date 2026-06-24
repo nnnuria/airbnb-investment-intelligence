@@ -298,32 +298,38 @@ if scen and prop:
         )
 
     # KPI row
-    k1, k2, k3, k4 = st.columns(4, gap="medium")
+    k1, k2, k3, k4, k5 = st.columns(5, gap="medium")
     with k1:
         card(
-            "Net annual revenue",
+            "Gross annual revenue",
+            f"€{scen.gross_revenue_year_eur:,.0f}",
+            f"€{scen.predicted_nightly_eur:,.0f}/night · {scen.nights_booked_year} nights",
+        )
+    with k2:
+        card(
+            "Net profit",
             f"€{scen.net_revenue_year_eur:,.0f}",
             f"P10–P90: €{scen.net_revenue_p10_eur:,.0f} – €{scen.net_revenue_p90_eur:,.0f}",
             featured=True,
         )
-    with k2:
+    with k3:
         card(
             "Indicative sale value",
             f"€{scen.sale_price_eur:,.0f}",
             f"€{scen.sale_price_per_m2_eur:,.0f}/m²",
         )
-    with k3:
+    with k4:
         card(
             "Payback period",
             f"{scen.breakeven_years:.1f} yrs"
             if scen.breakeven_years < 50 else "50+ yrs",
-            "net income to recover sale value",
+            "net profit to recover sale value",
         )
-    with k4:
+    with k5:
         card(
             "Projected occupancy",
             f"{scen.occupancy_rate_annual*100:.0f}%",
-            f"{scen.nights_booked_year} nights · €{scen.predicted_nightly_eur:,.0f}/night",
+            f"{scen.nights_booked_year} nights/year",
         )
 
     st.write("")
@@ -333,9 +339,9 @@ if scen and prop:
     chart_left, chart_right = st.columns([1.1, 1], gap="large")
 
     with chart_left:
-        st.markdown("##### Net revenue uncertainty")
+        st.markdown("##### Net profit uncertainty")
         st.caption(
-            "Indicative P10 / median / P90 net revenue. Uncertainty is "
+            "Indicative P10 / median / P90 net profit after all costs. Uncertainty is "
             "dominated by occupancy variability."
         )
         fig = go.Figure(
@@ -397,16 +403,16 @@ if scen and prop:
 
     with bd_left:
         st.markdown("##### Cost breakdown (annual)")
-        st.caption("Costs deducted from gross to arrive at net revenue.")
+        st.caption("Costs deducted from gross revenue to arrive at net profit.")
         # Combine costs + net, sort descending so the largest bar leads.
         cost_items = list(scen.cost_breakdown) + [
-            ("Net to owner", scen.net_revenue_year_eur),
+            ("Net profit", scen.net_revenue_year_eur),
         ]
         cost_items.sort(key=lambda x: x[1], reverse=True)
         cost_labels = [name for name, _ in cost_items]
         cost_values = [v for _, v in cost_items]
         cost_colors = [
-            KPMG_BLUE_DARK if name == "Net to owner" else
+            KPMG_BLUE_DARK if name == "Net profit" else
             "#5577B0" if v >= 3000 else
             "#A8B9DD" if v >= 1500 else
             KPMG_BLUE_TINT
