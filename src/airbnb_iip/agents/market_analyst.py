@@ -9,9 +9,14 @@ directly. That keeps model loading + serving in one place (the API
 process) and lets this agent run anywhere the API is reachable.
 
 Flow:
-    property spec -> /predict_price + /explain_price + /airbnb_vs_sell
-                     + /estimate_revenue -> gather_analysis() (pure, no LLM)
+    property spec -> POST /scenario (the full decision engine, one call)
+                  -> gather_analysis() (pure, no LLM)
                   -> narrate() (Gemini) -> analysis dict with a narrative
+
+Calling the single /scenario endpoint (rather than stitching /predict_price +
+/explain_price + /airbnb_vs_sell + /estimate_revenue) means this agent shares
+the exact numbers the Streamlit dashboard shows — same occupancy, same SHAP
+drivers — so the narrative can never drift from the UI.
 """
 
 from __future__ import annotations
@@ -28,6 +33,40 @@ load_dotenv()
 DEFAULT_API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
 
 DISCLAIMER = "Indicative only — not financial advice."
+
+
+def scenario_to_analysis(
+    scenario: Mapping[str, Any], *, city: str, neighbourhood: str,
+) -> dict[str, Any]:
+    """Map a ``/scenario`` response into the analysis dict ``narrate()`` consumes.
+
+    Shared by this agent's :meth:`MarketAnalystAgent.gather_analysis` and the
+    chat coordinator's market node, so the two can never describe the same
+    numbers differently. ``scenario`` is the JSON body returned by ``/scenario``
+    (or ``dataclasses.asdict(Scenario)``); both carry the same keys.
+    """
+    drivers = [
+        {"feature": label, "direction": "increases" if frac >= 0 else "decreases"}
+        for label, frac in scenario["feature_drivers"]
+    ]
+    return {
+        "city": city,
+        "neighbourhood": neighbourhood,
+        "nightly_price_eur": scenario["predicted_nightly_eur"],
+        "drivers": drivers,
+        "recommendation": scenario["recommendation"],
+        "npv_airbnb_p50_eur": scenario["npv_airbnb_p50_eur"],
+        "npv_sell_eur": scenario["npv_sell_eur"],
+        "break_even_years": scenario["breakeven_years"],
+        "confidence": {"p_airbnb_gt_sell": scenario["p_airbnb_gt_sell"]},
+        "annual_gross_eur": scenario["gross_revenue_year_eur"],
+        "annual_net_eur": scenario["net_revenue_year_eur"],
+        "p10_eur": scenario["net_revenue_p10_eur"],
+        "p90_eur": scenario["net_revenue_p90_eur"],
+        "disclaimer": DISCLAIMER,
+        # Full engine output, for the coordinator / chat layer downstream.
+        "scenario": scenario,
+    }
 
 SYSTEM_PROMPT = """You are a market analyst for the Airbnb Investment
 Intelligence Platform. Write a short brief (4-6 sentences) explaining an
@@ -97,55 +136,37 @@ class MarketAnalystAgent:
     # ── Gather (pure — no LLM) ───────────────────────────────────────────────
 
     def gather_analysis(self, property_spec: Mapping[str, Any]) -> dict[str, Any]:
-        """Call the FastAPI endpoints and assemble a structured analysis.
+        """Call ``POST /scenario`` and assemble a structured analysis.
 
-        ``property_spec`` accepts the same fields as ``/airbnb_vs_sell``
-        (``city``, ``neighbourhood_cleansed``, ``sq_m``, plus any
-        ``/predict_price`` fields like ``accommodates``/``bedrooms``).
-        Deterministic and LLM-free, so it is fully unit-testable without a
-        live Gemini key.
+        ``property_spec`` accepts the engine's ``Property`` fields (``city``,
+        ``district``, ``size_m2``, ``bedrooms``, ``bathrooms``, ``accommodates``,
+        ``room_type``, ``has_*``). Common ``/airbnb_vs_sell`` aliases
+        (``neighbourhood_cleansed``→``district``, ``sq_m``→``size_m2``,
+        ``bathrooms_number``→``bathrooms``) are accepted too. Deterministic and
+        LLM-free, so it is fully unit-testable without a live Gemini key.
         """
         spec = dict(property_spec)
-        city = spec.get("city", "madrid")
 
-        price_resp = self._post("/predict_price", spec)
-        explain_resp = self._post("/explain_price", spec)
-        vs_sell_resp = self._post(
-            "/airbnb_vs_sell",
-            {
-                "city": city,
-                "neighbourhood_cleansed": spec.get("neighbourhood_cleansed"),
-                "sq_m": spec.get("sq_m"),
-                "holding_years": spec.get("holding_years", 10),
-                "discount_rate": spec.get("discount_rate", 0.07),
-                **{k: v for k, v in spec.items() if k not in ("city", "sq_m")},
-            },
-        )
-        revenue_resp = self._post(
-            "/estimate_revenue",
-            {
-                "price_per_night": price_resp["price_per_night"],
-                "occupancy_rate": spec.get("occupancy_rate", 0.55),
-                "city": city,
-            },
-        )
-
-        return {
-            "city": city,
-            "neighbourhood": spec.get("neighbourhood_cleansed", "city-wide"),
-            "nightly_price_eur": price_resp["price_per_night"],
-            "drivers": explain_resp["drivers"],
-            "recommendation": vs_sell_resp["recommendation"],
-            "npv_airbnb_p50_eur": vs_sell_resp["npv_airbnb_p50_eur"],
-            "npv_sell_eur": vs_sell_resp["npv_sell_eur"],
-            "break_even_years": vs_sell_resp["break_even_years"],
-            "confidence": vs_sell_resp["confidence"],
-            "annual_gross_eur": revenue_resp["annual_gross_eur"],
-            "annual_net_eur": revenue_resp["annual_net_eur"],
-            "p10_eur": revenue_resp["p10_eur"],
-            "p90_eur": revenue_resp["p90_eur"],
-            "disclaimer": vs_sell_resp.get("disclaimer", DISCLAIMER),
+        payload = {
+            "city": spec.get("city", "madrid"),
+            "district": spec.get("district") or spec.get("neighbourhood_cleansed") or "Centro",
+            "size_m2": spec.get("size_m2") or spec.get("sq_m") or 80,
+            "bedrooms": spec.get("bedrooms", 2),
+            "bathrooms": spec.get("bathrooms") or spec.get("bathrooms_number") or 1,
+            "accommodates": spec.get("accommodates", 2),
+            "room_type": spec.get("room_type", "Entire home/apt"),
         }
+        for amenity in (
+            "has_ac", "has_balcony", "has_elevator",
+            "has_pool", "has_parking", "has_workspace",
+        ):
+            if amenity in spec:
+                payload[amenity] = spec[amenity]
+
+        s = self._post("/scenario", payload)
+        return scenario_to_analysis(
+            s, city=payload["city"], neighbourhood=payload["district"],
+        )
 
     # ── Narrate (Gemini) ─────────────────────────────────────────────────────
 

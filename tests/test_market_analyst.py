@@ -40,7 +40,8 @@ def test_gather_analysis_assembles_all_fields(agent: MarketAnalystAgent):
     assert analysis["city"] == "madrid"
     assert analysis["nightly_price_eur"] > 0
     assert 1 <= len(analysis["drivers"]) <= 6
-    assert analysis["recommendation"] in ("Airbnb", "Sell")
+    # /scenario uses the engine's own vocabulary (lower-case, plus "marginal").
+    assert analysis["recommendation"] in ("airbnb", "sell", "marginal")
     assert analysis["npv_sell_eur"] > 0
     assert analysis["p10_eur"] <= analysis["p90_eur"]
     assert "Indicative only" in analysis["disclaimer"]

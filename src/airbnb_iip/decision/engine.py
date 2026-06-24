@@ -76,12 +76,14 @@ _FALLBACK_DISTRICTS: dict[str, list[str]] = {
 
 # ── Listings data paths ───────────────────────────────────────────────────────
 
+# engine.py lives at src/airbnb_iip/decision/ → parents[3] is the repo root,
+# matching how models/price.py and models/sale.py resolve Data/.
 _ABT_PATH = (
-    Path(__file__).resolve().parents[2]
+    Path(__file__).resolve().parents[3]
     / "Data" / "processed" / "listings_all_cities.parquet"
 )
 _PRICE_HAT_PATH = (
-    Path(__file__).resolve().parents[2]
+    Path(__file__).resolve().parents[3]
     / "Data" / "processed" / "listings_with_price_hat.parquet"
 )
 _MIN_COMPARABLES = 5
@@ -133,6 +135,12 @@ class Scenario:
     sale_price_eur: float
     sale_price_per_m2_eur: float
     breakeven_years: float
+
+    # NPV view of the same decision (exposed for the agent narrative / chat).
+    # Defaulted so older saved records deserialise without these keys.
+    npv_airbnb_p50_eur: float = 0.0
+    npv_sell_eur: float = 0.0
+    p_airbnb_gt_sell: float = 0.0
 
     monthly_seasonality: list[float] = field(default_factory=list)
     cost_breakdown: list[tuple[str, float]] = field(default_factory=list)
@@ -572,6 +580,9 @@ def compute_scenario(prop: Property) -> Scenario:
         sale_price_eur=sale_value,
         sale_price_per_m2_eur=sale_per_m2,
         breakeven_years=round(breakeven_years, 1),
+        npv_airbnb_p50_eur=round(mc["p50"], 0),
+        npv_sell_eur=round(sell_net, 0),
+        p_airbnb_gt_sell=round(p_airbnb, 3),
         monthly_seasonality=seasonality,
         cost_breakdown=costs,
         feature_drivers=drivers,

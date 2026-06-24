@@ -13,8 +13,16 @@ from components.branding import (
     TEXT_SECONDARY,
     WHITE,
 )
-from components.engine import CITY_LABELS, chat_reply
+from airbnb_iip.decision.engine import CITY_LABELS
+from components.api_client import APIError
+from components.api_client import chat as chat_api
 from components.styling import apply_page_style, footer_disclaimer, hero
+
+GREETING = (
+    "Hi, I'm your investment co-pilot. Ask about the recommendation, projected "
+    "revenue, occupancy, comparable listings, regulations, or improvement ideas — "
+    "I answer from the same models and agents the decision page uses."
+)
 
 apply_page_style("Chat")
 
@@ -28,6 +36,16 @@ hero(
 
 scen = st.session_state.get("scenario")
 prop = st.session_state.get("property")
+
+
+def _assistant_reply(prompt: str) -> str:
+    """Route a message through the API coordinator, with the active analysis
+    as context. Falls back to a friendly error if the API is unreachable."""
+    try:
+        return chat_api(prompt, property=prop, scenario=scen)["answer"]
+    except APIError as exc:
+        return f"⚠️ {exc}"
+
 
 # ── Context banner (above messages) ──────────────────────────────────────────
 if scen and prop:
@@ -61,7 +79,7 @@ else:
 # ── Conversation state ───────────────────────────────────────────────────────
 if "chat_history" not in st.session_state:
     st.session_state["chat_history"] = [
-        {"role": "assistant", "content": chat_reply("hello", scen)},
+        {"role": "assistant", "content": GREETING},
     ]
 
 for msg in st.session_state["chat_history"]:
@@ -85,8 +103,10 @@ for col, prompt in zip(chip_cols, suggestions):
     with col:
         if st.button(prompt, key=f"chip_{prompt}", use_container_width=True):
             st.session_state["chat_history"].append({"role": "user", "content": prompt})
+            with st.spinner("Thinking…"):
+                reply = _assistant_reply(prompt)
             st.session_state["chat_history"].append(
-                {"role": "assistant", "content": chat_reply(prompt, scen)},
+                {"role": "assistant", "content": reply},
             )
             st.rerun()
 
@@ -94,15 +114,17 @@ for col, prompt in zip(chip_cols, suggestions):
 user_input = st.chat_input("Ask a question — try 'should I sell?'")
 if user_input:
     st.session_state["chat_history"].append({"role": "user", "content": user_input})
+    with st.spinner("Thinking…"):
+        reply = _assistant_reply(user_input)
     st.session_state["chat_history"].append(
-        {"role": "assistant", "content": chat_reply(user_input, scen)},
+        {"role": "assistant", "content": reply},
     )
     st.rerun()
 
 st.write("")
 if st.button("Clear conversation", type="secondary"):
     st.session_state["chat_history"] = [
-        {"role": "assistant", "content": chat_reply("hello", scen)},
+        {"role": "assistant", "content": GREETING},
     ]
     st.rerun()
 
