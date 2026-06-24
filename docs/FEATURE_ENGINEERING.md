@@ -149,7 +149,7 @@ Two forms: `estimate_occupancy()` (scalar, for a hypothetical property) and `est
 
 **Per-city price performance (LightGBM):** Madrid R² 0.797 · Barcelona 0.819 · Málaga 0.752.
 
-**One combined model, not per-city** (rationale on record): Málaga is too small to train independently; feature effects are directionally consistent across cities (only magnitudes differ — handled by `city` as a feature + tree splits); neighbourhood encoding gives local granularity; SHAP can be filtered per city post-hoc.
+**Update — per-city models chosen (#2B, PRs #25/#26).** The single combined model was the original design and is the **general** baseline. A head-to-head comparison (`notebooks/price_ml_model_comparison.ipynb`) then trained general vs by-city vs by-cluster on the same split: **by-city won** (R² 0.8137 vs general 0.8096 vs cluster 0.8009), so **per-city LightGBM models shipped** (`models/price_city_{madrid,barcelona,malaga}_model.pkl`, feature list in `models/price_city_artefacts.json`) and are served via `src/airbnb_iip/models/price.py`. By-cluster came in slightly below general, so the segments stay a feature, not a model split. The feature engineering above is shared across all three approaches.
 
 ---
 

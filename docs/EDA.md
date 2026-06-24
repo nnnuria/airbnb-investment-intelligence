@@ -142,11 +142,19 @@ Source: `notebooks/sell_price_eda.ipynb`, from the scraped Idealista sale listin
 
 | Split dimension | Viable slices | Verdict |
 |---|---|---|
-| By city | 3 / 3 (Madrid 18,862 · Barcelona 15,199 · Málaga 8,762) | Feasible, but **unnecessary** — per-city R² under the combined model is already strong (0.797 / 0.819 / 0.752) |
-| By city × property type | 6 / 18 (only Entire-place & Private-room clear 500) | **No** — 12 slices too small; pool into the combined model |
-| By market segment | 4 / 4 (all ≥500) | Use the segment as a **feature**, not a model router |
+| By city | 3 / 3 (Madrid 18,862 · Barcelona 15,199 · Málaga 8,762) | Feasible — and **chosen** after the empirical test below |
+| By city × property type | 6 / 18 (only Entire-place & Private-room clear 500) | **No** — 12 slices too small; pool into the model |
+| By market segment | 4 / 4 (all ≥500) | Feasible, but **not selected** (see below); kept as a feature |
 
-**Conclusion:** one combined model with `city` as a feature (current design); do not split by property type; #2B (Nicklas) to confirm empirically that city-splitting isn't worthwhile.
+**Conclusion (updated after the empirical comparison, #2B).** Feasibility ruled property-type splitting out and left city- and segment-splitting open. The three approaches were then trained head-to-head on the same held-out split (`notebooks/price_ml_model_comparison.ipynb`, PRs #25/#26):
+
+| Approach | R² | RMSE (€) | MAE (€) | MdAPE |
+|---|---:|---:|---:|---:|
+| General (1 model) | 0.8096 | 69.5 | 31.6 | 15.2% |
+| **By city (×3) — chosen** | **0.8137** | **68.5** | **30.8** | 14.6% |
+| By cluster (×5) | 0.8009 | 69.8 | 31.6 | 14.4% |
+
+→ **Per-city models were selected** (R² spread 0.013, above the team's 0.005 operability threshold) and shipped (`models/price_city_*_model.pkl`). Property-type splitting stays rejected. **By-cluster scored slightly *below* the general model** — the segments add little as a model split (they largely recover the raw features), so they are kept as a **descriptive / benchmarking feature**, not a model router.
 
 ### 8.2 Market segments (K-means clustering) — executed end-to-end
 `notebooks/segmentation.ipynb` (method: `docs/cluster_analysis_method.md`) clusters listings on *attributes only*, writing `Segment_Name` to `Data/processed/listings_segmented.parquet`. **The notebook was run end-to-end on the real data with no errors; the numbers below are its actual output**, not estimates.
@@ -167,6 +175,8 @@ Source: `notebooks/sell_price_eda.ipynb`, from the scraped Idealista sale listin
 | Ultra / Extreme | 4,234 | 9.9% | €262 | multivariate outliers, lower rating |
 
 > **The two ~€160 tiers are the same price but split by location** (central vs non-central entire homes) — exactly the signal `is_central` was protected to keep. Same price, different location is a real, defensible distinction, which is why the segments are named by structure rather than price (it also pre-empts the obvious "why are these two separate?" question). A coarser three-tier `k=3` view (Budget/Mid/Premium, silhouette 0.33, largest 42.7%) is available if a pure price story is preferred. See `NOTEBOOK_IMPROVEMENTS.md`.
+
+> **How the segments are used (per #2B):** in the price-model comparison (`notebooks/price_ml_model_comparison.ipynb`), per-cluster models scored slightly *below* the general model (R² 0.8009 vs 0.8096), so segments are **not** used to split the model — they serve as a descriptive / benchmarking feature. The shipped price approach is **per-city** (§8.1).
 
 ---
 
@@ -192,7 +202,7 @@ Plus a **national registration number (NRA)** required since 2 Jan 2025 (RD 1312
 4. **Seasonality is genuinely uncertain in summer** — internal signals and the external benchmark disagree on August. A documented limitation, not a bug.
 5. **Sale price is non-linear in size** — model total price, not €/m² × size.
 6. **Regulation can override the numbers** — the most defensible, KPMG-aligned insight in the analysis.
-7. **Splitting the data isn't warranted** — by city it's feasible but unnecessary (strong per-city R²); by property type only 6/18 slices are large enough. One combined model with `city` + market `segment` as features is the right design (§8).
+7. **Per-city models win (narrowly).** The head-to-head test chose **by-city** (R² 0.8137) over a single general model (0.8096); by-cluster was slightly worse (0.8009). Property-type splitting stays rejected; segments are kept as a feature, not a model split (§8).
 
 ---
 
