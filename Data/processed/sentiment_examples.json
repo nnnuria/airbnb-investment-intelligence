@@ -1,0 +1,91 @@
+{
+  "madrid": {
+    "positive": [
+      {
+        "text": "My best AirBnB experience, hands down. The apartment is small, but super clean, and equipped with every household item you could think of. The hosts are amazing and it’s close to all things fun and happening in Madrid. I loved Madrid but I equally loved our abode there and that’s",
+        "score": 0.99
+      },
+      {
+        "text": "Everything was perfect in Walter's apartment. Clean room, great location, well-equipped apartment... The best part is that Walter is a great host! He is nice and provides the best service he can. It was my first time staying at airbnb, but definitely was a wonderful experien",
+        "score": 0.99
+      },
+      {
+        "text": "I spent at Ines's flat two night. Unfortunatelly we did not get to meet, but there is a super lovely neibourgh Mari. She is just an amazing person and was really kind to let me in the flat in very early hours. No problem with comunnication and flat is situated in a good location",
+        "score": 0.99
+      }
+    ],
+    "negative": [
+      {
+        "text": "Apartment location it’s perfect. However, inconvenient during the check in and out. No elevator, and bad smell inside the apartment. In addition, second bed on top, very uncomfortable and dangerous getting up and down, stinky, and dirty sheets, shower very tiny and uncomfortable",
+        "score": -0.93
+      },
+      {
+        "text": "I didn’t stay and I had to cancel as the air conditioning was broken and the sofa was damaged and dirty , they gave me wrong address and I had to wait for the correct address with my luggage at the street",
+        "score": -0.92
+      },
+      {
+        "text": "Diego is very nice, but the place was not clean. He has two (large) dogs and a very cramped apartment. The keys to the apartment are difficult to use (the door to the apartment building is very difficult to unlock) and there is no lock on your actual room door that you can lock f",
+        "score": -0.89
+      }
+    ]
+  },
+  "barcelona": {
+    "positive": [
+      {
+        "text": "We loved this apartment, very clean, air con was great and a lovely location. We spent a lot of time on the balcony after sightseeing, it’s a lovely place to sit and enjoy the sunshine. Comfy beds and everything you need. Would highly recommend and would definitely come back. Ver",
+        "score": 0.99
+      },
+      {
+        "text": "thank you Xavi! you're an amazing host with lots of local info to share, super friendly, fun, and responsive. the flat is just perfect, everything works great, the terrace is a fantastic bonus. we felt very special and very safe, from start to finish! the location is fantastic. l",
+        "score": 0.99
+      },
+      {
+        "text": "Fantastic place, beautiful room with extremely nice and clean sheets and towels, amazing common room and kitchen ♥️ great breakfast 👌🥰 couldn’t imagine better place too stay 👌",
+        "score": 0.99
+      }
+    ],
+    "negative": [
+      {
+        "text": "Bad experience! Very old dirty house in a bad condition. Broken couch, no mattress on the second bed, stinky disguisting curtains. it was obvious that the host didn't care at all about the visitor's comfort and needs. The location was really convenient!",
+        "score": -0.94
+      },
+      {
+        "text": "It’s sad I didn’t go to Xavier place in the end due to the loss of my father. I told him with documentation. He promised it’s possible to change the booking to next year but he rejected in the end. It’s sad when you expect people might show some empathy. Anyways, everyone sh",
+        "score": -0.93
+      },
+      {
+        "text": "The most horrible experience. Unsafe location. A guy tried to rob us and the taxi driver when we got to the location. When trying to contact the host they did not respond until the next day. And when asked for a refund because we would not stay at an unsafe place they denied it (",
+        "score": -0.92
+      }
+    ]
+  },
+  "malaga": {
+    "positive": [
+      {
+        "text": "We had the best welcome ever! What an angel and helpful man! We could easily store our luggage before check in and that was even provided earlier. Felt right at home. The room was super nice. The whole building is stunning and clean. The handling of getting in is super easy. It i",
+        "score": 0.99
+      },
+      {
+        "text": "I stayed here for 3 nights. Which was the perfect amount well maybe 4-5 would have been great too. It is cozy but very comfortable. Perfect for a single or a couple. The bed was so comfortable. I love the patio at night on the hammock. Their place is in the center of everything.",
+        "score": 0.99
+      },
+      {
+        "text": "We had a great stay. The location was brilliant as it’s in a quiet street but so close to town and to getting bus tours. The apartment itself was really nice and had everything we needed. Martha and Claudia were super proactive and nice. Overall a great stay, and definitely good",
+        "score": 0.99
+      }
+    ],
+    "negative": [
+      {
+        "text": "Dirty, lacking basics e.g loo paper, kettle or coffee maker. For visitors it’s difficult to find. Two stories above a night club so noisy late into the night. Entrance hall dirty & the main door was broken. Very poor leaking shower. Overall the apartment needs maintenance & a dee",
+        "score": -0.92
+      },
+      {
+        "text": "The apartment is in a prime position for the old town , plenty of bars and restaurants and a good selection of small supermarkets. The apartment is clean and tidy but the floor tiles at kitchen are very loose and are little dangerous , also the shower head holder in one of the ba",
+        "score": -0.91
+      }
+    ]
+  },
+  "_meta": {
+    "note": "Illustrative English-language example reviews, scored with VADER compound (the English scorer used in nlp.py). Source: Inside Airbnb review text. Examples are indicative, not a statistical sample."
+  }
+}
