@@ -12,6 +12,7 @@ Flow:
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +25,7 @@ load_dotenv()
 
 ROOT       = Path(__file__).resolve().parents[3]
 CORPUS_DIR = ROOT / "Data" / "regulatory"
-INDEX_DIR  = ROOT / "data" / "processed" / "regulatory_index"
+INDEX_DIR  = ROOT / "Data" / "processed" / "regulatory_index"
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -143,9 +144,9 @@ class RegulatoryAgent:
                     doc.metadata["city"] = city
                     doc.metadata["source_file"] = pdf_path.name
                 all_docs.extend(docs)
-                print(f"  ✓ {pdf_path.name} ({len(docs)} pages)")
+                print(f"  [OK] {pdf_path.name} ({len(docs)} pages)")
             except Exception as e:
-                print(f"  ✗ Could not load {pdf_path.name}: {e}")
+                print(f"  [FAIL] Could not load {pdf_path.name}: {e}")
 
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=CHUNK_SIZE,
@@ -164,7 +165,7 @@ class RegulatoryAgent:
 
     # ── Query ─────────────────────────────────────────────────────────────────
 
-    def query(self, question: str) -> dict[str, Any]:
+    def query(self, question: str, city: str | None = None) -> dict[str, Any]:
         """
         Ask a regulatory question. Returns:
             answer      — English answer with citations
@@ -172,9 +173,31 @@ class RegulatoryAgent:
             risk_flag   — "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN"
             city        — city detected from sources
             disclaimer  — always present
+
+        ``city`` restricts retrieval to that city's documents + national
+        rules. Without it, a city-specific FAQ written in a more
+        question-like style (e.g. Málaga's) can outrank the actually
+        relevant city's denser legal/decree text for a generic-sounding
+        question — a structural weakness of dense retrieval over a
+        heterogeneous, mixed-genre corpus, not a missing-document problem.
+        Pass ``city`` whenever it's already known (see :meth:`get_risk_flag`).
         """
-        # 1. Retrieve top-4 relevant chunks
-        docs = self.vectorstore.similarity_search(question, k=4)
+        # 1. Retrieve top-4 relevant chunks, optionally city-scoped.
+        # Filtered manually (search everything, then keep matches) rather
+        # than via FAISS's filter= kwarg: the corpus is small (low hundreds
+        # of chunks) so an exhaustive search is cheap, and this sidesteps
+        # langchain_community's filter/fetch_k interaction being easy to
+        # mis-tune (verified during development that it under-returns
+        # unless fetch_k is raised to cover the full corpus anyway).
+        if city:
+            target_city = city.strip().lower()
+            total_chunks = self.vectorstore.index.ntotal
+            ranked = self.vectorstore.similarity_search(question, k=total_chunks)
+            docs = [
+                d for d in ranked if d.metadata.get("city") in (target_city, "national")
+            ][:4]
+        else:
+            docs = self.vectorstore.similarity_search(question, k=4)
 
         # 2. Build context string with source labels
         context_parts = []
@@ -238,7 +261,7 @@ class RegulatoryAgent:
             f"in {neighbourhood + ', ' if neighbourhood else ''}{city}? "
             f"Is a licence available and what are the restrictions?"
         )
-        result = self.query(question)
+        result = self.query(question, city=city)
         return {
             "risk_flag": result["risk_flag"],
             "reason": result["answer"],
@@ -248,9 +271,27 @@ class RegulatoryAgent:
         }
 
 
+@lru_cache(maxsize=1)
+def get_regulatory_agent() -> RegulatoryAgent:
+    """Process-wide singleton — loads the embeddings model + FAISS index once.
+
+    Without this, a caller that re-instantiates RegulatoryAgent on every
+    call (e.g. a Streamlit page, which reruns its whole script on every
+    interaction) reloads the embeddings model and FAISS index from scratch
+    each time — slow, and needlessly re-reads from disk.
+    """
+    return RegulatoryAgent()
+
+
 # ── Quick test ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    import sys
+
+    # LLM answers can contain emoji/accented characters; Windows' default
+    # console encoding (cp1252) can't print them and crashes mid-loop.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
     print("Building regulatory agent ...\n")
     agent = RegulatoryAgent()
 

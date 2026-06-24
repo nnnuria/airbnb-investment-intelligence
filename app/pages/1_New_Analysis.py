@@ -7,8 +7,11 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from airbnb_iip.agents.comparables import get_comparables_agent
+from airbnb_iip.agents.governance import apply_regulatory_guardrails
+from airbnb_iip.agents.regulatory import get_regulatory_agent
 from components.branding import (
     BORDER_SUBTLE,
+    DANGER,
     DISCLAIMER,
     KPMG_BLUE,
     KPMG_BLUE_DARK,
@@ -102,8 +105,19 @@ if submitted:
     st.session_state["property"] = prop
     st.session_state["scenario"] = compute_scenario(prop)
 
+    # Regulatory risk — computed once per "Run analysis" click (not on every
+    # rerun) since it makes a real Gemini call; cached in session_state like
+    # the scenario itself so later reruns (e.g. clicking "Save") don't
+    # re-trigger it.
+    try:
+        reg_raw = get_regulatory_agent().get_risk_flag(prop.city, prop.district)
+        st.session_state["regulatory"] = apply_regulatory_guardrails(reg_raw)
+    except Exception as exc:
+        st.session_state["regulatory"] = {"error": str(exc)}
+
 prop = st.session_state.get("property")
 scen = st.session_state.get("scenario")
+reg = st.session_state.get("regulatory")
 
 # ── Results ──────────────────────────────────────────────────────────────────
 if scen and prop:
@@ -408,6 +422,55 @@ if scen and prop:
                 f"KNN on beds, capacity, bathrooms, and amenity count · "
                 f"Filters: {filters_note or 'city only'}"
             )
+
+    st.write("")
+    st.write("")
+
+    # ── Regulatory risk ──────────────────────────────────────────────────────
+    with st.expander("Regulatory risk — STR licensing for this district", expanded=False):
+        if not reg:
+            st.info("No regulatory check available for this analysis.")
+        elif "error" in reg:
+            if "RESOURCE_EXHAUSTED" in reg["error"] or "429" in reg["error"]:
+                friendly = (
+                    "Regulatory check unavailable right now — the Gemini API's free-tier "
+                    "daily quota has been reached. Try again later."
+                )
+            else:
+                friendly = "Regulatory check unavailable right now (unexpected error)."
+            st.warning(
+                f"{friendly} Treat this property's regulatory status as unverified — "
+                "check official municipal/regional sources manually."
+            )
+        else:
+            risk_colors = {
+                "HIGH": DANGER, "MEDIUM": WARNING, "LOW": SUCCESS, "UNKNOWN": TEXT_MUTED,
+            }
+            risk_color = risk_colors.get(reg["risk_flag"], TEXT_MUTED)
+            st.markdown(
+                f"""
+                <span style="display: inline-block; padding: 0.3rem 0.7rem;
+                             background: {risk_color}; color: {WHITE};
+                             font-weight: 600; font-size: 0.78rem;
+                             letter-spacing: 0.03em; border-radius: 999px;">
+                  RISK: {reg['risk_flag']}
+                </span>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.write("")
+            st.write(reg["reason"])
+            if reg.get("sources"):
+                st.caption("Sources: " + "; ".join(reg["sources"]))
+            if reg.get("governance", {}).get("human_review_required"):
+                st.warning(
+                    "This regulatory result needs human review before relying on it "
+                    "(risk could not be clearly determined from the official documents)."
+                )
+            # The LLM is prompted to end every answer with the disclaimer already;
+            # only show it again here if that didn't happen.
+            if reg["disclaimer"] not in reg["reason"]:
+                st.caption(reg["disclaimer"])
 
     st.write("")
     st.write("")
