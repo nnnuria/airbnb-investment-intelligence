@@ -1,9 +1,16 @@
-"""Optimisation — ROI-ranked improvement ideas for an Airbnb-bound property."""
+"""Optimisation — ROI-ranked improvement ideas for an Airbnb-bound property.
+
+Powered by ``airbnb_iip.agents.optimisation``: per-amenity uplift (price-model
+counterfactual for AC, ``price − price_hat`` residual for the rest), a peer-group
+revenue gap, and Apriori-style association rules as the "why".
+"""
 
 from __future__ import annotations
 
 import streamlit as st
 
+from components.api_client import APIError
+from components.api_client import optimise as api_optimise
 from components.branding import (
     BORDER_SUBTLE,
     DISCLAIMER,
@@ -16,7 +23,7 @@ from components.branding import (
     WARNING,
     WHITE,
 )
-from airbnb_iip.decision.engine import CITY_LABELS, suggest_improvements
+from airbnb_iip.decision.engine import CITY_LABELS
 from components.styling import apply_page_style, footer_disclaimer, hero
 
 apply_page_style("Optimisation")
@@ -25,8 +32,8 @@ hero(
     eyebrow="Step 04",
     title="Optimisation",
     lede="If you go the Airbnb route, here are improvements ranked by "
-         "payback period. Each one estimates investment, monthly revenue "
-         "uplift, and how confident the recommendation is.",
+         "payback period. Each estimates investment, annual revenue uplift, "
+         "and how confident the recommendation is.",
 )
 
 scen = st.session_state.get("scenario")
@@ -58,18 +65,76 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-improvements = suggest_improvements(prop, scen)
+# ── Run the optimisation service ──────────────────────────────────────────────
+spec = {
+    "city": prop.city,
+    "district": prop.district,
+    "room_type": prop.room_type,
+    "accommodates": prop.accommodates,
+    "bedrooms": prop.bedrooms,
+    "bathrooms": prop.bathrooms,
+    "has_ac": prop.has_ac,
+    "has_balcony": prop.has_balcony,
+    "has_elevator": prop.has_elevator,
+    "has_pool": prop.has_pool,
+    "has_parking": prop.has_parking,
+    "has_workspace": prop.has_workspace,
+}
+try:
+    plan = api_optimise(spec, projected_annual_nights=scen.nights_booked_year)
+    recommendations = plan.recommendations
+except APIError as exc:  # pragma: no cover - defensive UI guard
+    st.warning(f"Optimisation data is unavailable right now ({exc}).")
+    footer_disclaimer(DISCLAIMER)
+    st.stop()
+
+# ── Peer-group revenue gap (feature-gap framing) ──────────────────────────────
+if plan.peer_n:
+    st.markdown(
+        f"""
+        <div style="padding: 1.25rem 1.5rem; border: 1px solid {KPMG_BLUE};
+                    background: linear-gradient(180deg, {KPMG_BLUE_TINT} 0%, {WHITE} 85%);
+                    border-radius: 14px; margin-bottom: 1.25rem;">
+          <div style="color: {KPMG_BLUE_DARK}; font-size: 0.72rem; font-weight: 600;
+                      letter-spacing: 0.08em; text-transform: uppercase;
+                      margin-bottom: 0.4rem;">
+            Revenue gap vs top performers
+          </div>
+          <div style="font-size: 0.95rem; color: {TEXT_SECONDARY}; line-height: 1.55;">
+            Among <b>{plan.peer_n:,}</b> comparable {CITY_LABELS[prop.city]} listings
+            ({prop.room_type.lower()}), the typical one earns
+            <b>€{plan.peer_median_revenue_eur:,.0f}/yr</b> while the top quartile reaches
+            <b>€{plan.peer_target_revenue_eur:,.0f}/yr</b> — a headroom of
+            <b style="color: {KPMG_BLUE};">€{plan.gap_to_top_quartile_eur:,.0f}/yr</b>.
+            The improvements below are ways to close it.
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+if not recommendations:
+    st.success(
+        "This property already has the high-ROI amenities we'd recommend for "
+        "its peer group — there's no obvious low-payback improvement left."
+    )
+    footer_disclaimer(DISCLAIMER)
+    st.stop()
+
+method_label = {"counterfactual": "model counterfactual", "residual": "market residual"}
 
 # ── Ranked list of improvements ──────────────────────────────────────────────
-for idx, imp in enumerate(improvements, start=1):
+for idx, imp in enumerate(recommendations, start=1):
     confidence_color = {
         "high": SUCCESS, "medium": KPMG_BLUE, "low": WARNING,
     }[imp.confidence]
     payback_color = SUCCESS if imp.payback_months <= 12 else \
                     KPMG_BLUE if imp.payback_months <= 24 else WARNING
-    payback_label = (f"{imp.payback_months:.0f} months" if imp.payback_months < 60
-                     else "—")
-    annual_uplift = imp.monthly_revenue_uplift_eur * 12
+    lift_chip = (
+        f'<span style="margin-left: 0.4rem; color: {TEXT_MUTED}; font-size: 0.72rem;">'
+        f'lift {imp.lift:.2f}×</span>'
+        if imp.lift else ""
+    )
 
     st.markdown(
         f"""
@@ -89,6 +154,9 @@ for idx, imp in enumerate(improvements, start=1):
                              text-transform: uppercase;">
                   {imp.confidence} confidence
                 </span>
+                <span style="color: {TEXT_MUTED}; font-size: 0.72rem;">
+                  {method_label.get(imp.method, imp.method)}</span>
+                {lift_chip}
               </div>
               <div style="font-size: 1.15rem; font-weight: 700;
                           margin-bottom: 0.35rem; color: {KPMG_BLUE_DARK};">
@@ -106,7 +174,7 @@ for idx, imp in enumerate(improvements, start=1):
                 Annual uplift
               </div>
               <div style="font-size: 1.5rem; font-weight: 700; color: {SUCCESS};">
-                +€{annual_uplift:,.0f}
+                +€{imp.annual_uplift_eur:,.0f}
               </div>
               <div style="margin-top: 0.6rem; color: {TEXT_SECONDARY};
                           font-size: 0.88rem;">
@@ -114,7 +182,7 @@ for idx, imp in enumerate(improvements, start=1):
               </div>
               <div style="margin-top: 0.2rem; color: {payback_color};
                           font-size: 0.92rem; font-weight: 600;">
-                Payback {payback_label}
+                Payback {imp.payback_months:.0f} months
               </div>
             </div>
           </div>
@@ -124,8 +192,8 @@ for idx, imp in enumerate(improvements, start=1):
     )
 
 # ── Totals ───────────────────────────────────────────────────────────────────
-total_uplift = sum(i.monthly_revenue_uplift_eur for i in improvements) * 12
-total_invest = sum(i.investment_eur for i in improvements)
+total_uplift = sum(i.annual_uplift_eur for i in recommendations)
+total_invest = sum(i.investment_eur for i in recommendations)
 
 st.write("")
 st.markdown("### If you implemented everything")
@@ -162,5 +230,12 @@ with t3:
       <div style="font-size: 1.85rem; font-weight: 700;">
         {combined_payback:.0f} months</div>
     </div>""", unsafe_allow_html=True)
+
+st.caption(
+    "Uplift method — air conditioning is a price-model feature, so its figure is "
+    "a counterfactual (re-predicting with the amenity toggled). Other amenities "
+    "use the price − price_hat residual, controlling for location and size. "
+    "Lift is from Apriori-style association rules over the city's listings."
+)
 
 footer_disclaimer(DISCLAIMER)

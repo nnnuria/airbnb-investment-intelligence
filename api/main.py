@@ -5,10 +5,10 @@ Run locally:
 Docs:
     http://127.0.0.1:8000/docs
 
-Endpoint status:
-    LIVE   /predict_price, /explain_price, /estimate_occupancy, /estimate_revenue,
-           /airbnb_vs_sell, /scenario (full decision engine)
-    STUB   /optimise  (flagged "_stub")
+Endpoint status (all LIVE):
+    /predict_price, /explain_price, /estimate_occupancy, /estimate_revenue,
+    /airbnb_vs_sell, /scenario (full decision engine), /optimise,
+    /comparables, /regulatory_risk, /chat (LangGraph coordinator)
 """
 
 from __future__ import annotations

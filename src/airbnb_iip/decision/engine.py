@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 from airbnb_iip.agents.governance import apply_financial_guardrails
 from airbnb_iip.config import FINANCE, OCCUPANCY
 from airbnb_iip.data.occupancy import estimate_occupancy
-from airbnb_iip.models.price import get_price_predictor
+from airbnb_iip.models.price import get_city_price_predictor
 from airbnb_iip.models.sale import get_sale_predictor
 from airbnb_iip.finance.costs import (
     annual_gross_revenue,
@@ -88,10 +88,20 @@ _PRICE_HAT_PATH = (
 )
 _MIN_COMPARABLES = 5
 
-# Amenities that the LightGBM price model (29 selected features) did NOT include.
-# Their marginal effect is captured here from data-driven residuals at runtime.
+# Amenities not in the by-city LightGBM model's RFE-selected feature set.
+# Their marginal effect is captured from data-driven residuals at runtime.
 _NON_MODEL_AMENITY_COLS: tuple[str, ...] = (
     "has_balcony", "has_elevator", "has_pool", "has_parking", "has_workspace",
+)
+
+# All 22 amenity flags (matches AMENITY_PATTERNS in src/airbnb_iip/features/amenities.py).
+_ALL_AMENITY_FIELDS: tuple[str, ...] = (
+    "has_pool", "has_gym", "has_parking", "has_hot_tub", "has_beach",
+    "has_view", "has_ac", "has_elevator", "has_washer", "has_dishwasher",
+    "has_workspace", "has_self_checkin", "has_pets", "has_crib",
+    "has_private_entrance", "has_balcony", "has_bathtub", "has_dryer",
+    "has_ev_charger", "has_outdoor_space", "has_long_term_ok",
+    "has_cleaning_service",
 )
 
 
@@ -107,14 +117,39 @@ class Property:
     bathrooms: float
     accommodates: int
     room_type: str
-    has_balcony: bool = False
+    # Amenities — all 22 from AMENITY_PATTERNS (model inputs, residual adjustments, count)
     has_ac: bool = False
     has_elevator: bool = False
+    has_balcony: bool = False
     has_pool: bool = False
     has_parking: bool = False
     has_workspace: bool = False
+    has_gym: bool = False
+    has_hot_tub: bool = False
+    has_beach: bool = False
+    has_view: bool = False
+    has_washer: bool = False
+    has_dishwasher: bool = False
+    has_self_checkin: bool = False
+    has_pets: bool = False
+    has_crib: bool = False
+    has_private_entrance: bool = False
+    has_bathtub: bool = False
+    has_dryer: bool = False
+    has_ev_charger: bool = False
+    has_outdoor_space: bool = False
+    has_long_term_ok: bool = False
+    has_cleaning_service: bool = False
+    extra_amenities: list = field(default_factory=list)
     nickname: str | None = None
     notes: str | None = None
+
+    @property
+    def amenity_count(self) -> int:
+        """Total amenity count: flag-based + free-text extras."""
+        return sum(
+            1 for f in _ALL_AMENITY_FIELDS if getattr(self, f)
+        ) + len(self.extra_amenities)
 
 
 @dataclass
@@ -360,10 +395,12 @@ def predict_nightly_price(prop: Property) -> float:
         "bedrooms": prop.bedrooms,
         "bathrooms_number": prop.bathrooms,
         "has_ac": int(prop.has_ac),
+        "has_crib": int(prop.has_crib),
+        "has_dishwasher": int(prop.has_dishwasher),
         "instant_bookable": 1,
         **ctx,
     }
-    base = get_price_predictor().predict(spec)
+    base = get_city_price_predictor().predict({**spec, "city": prop.city})
     adjustment, _ = _amenity_residual_adjustment(prop)
     return round(max(base + adjustment, 0.0), 2)
 
@@ -384,32 +421,27 @@ def _shap_drivers(prop: Property) -> list[tuple[str, float]]:
         "bedrooms": prop.bedrooms,
         "bathrooms_number": prop.bathrooms,
         "has_ac": int(prop.has_ac),
+        "has_crib": int(prop.has_crib),
+        "has_dishwasher": int(prop.has_dishwasher),
         "instant_bookable": 1,
         **ctx,
     }
 
-    # SHAP from the LightGBM model (29 selected features)
+    # SHAP from the city-specific LightGBM model
     shap_contributions: dict[str, float] = {}
     total_abs = 1.0
     try:
-        predictor = get_price_predictor()
-        raw_df = pd.DataFrame([spec])
-        feats = predictor._build_features_frame(raw_df)
-        for col in predictor.features:
-            fallback = predictor._nbh_default if col == "neighbourhood_target_enc" else 0.0
-            feats[col] = feats[col].fillna(predictor.medians.get(col, fallback))
-
-        ordered = feats[predictor.features]
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            shap_raw = predictor.model.predict(ordered, pred_contrib=True)[0, :-1]
-
-        total_abs = float(np.abs(shap_raw).sum()) or 1.0
-        for feat, val in zip(predictor.features, shap_raw):
-            label = _PRICE_FEATURE_LABELS.get(feat)
+        predictor = get_city_price_predictor()
+        city_spec = {**spec, "city": prop.city}
+        shap_entries = predictor.explain(city_spec, top_n=len(predictor.features))
+        total_abs = sum(abs(e["shap_value"]) for e in shap_entries) or 1.0
+        for entry in shap_entries:
+            label = _PRICE_FEATURE_LABELS.get(entry["feature"])
             if label is None:
                 continue
-            shap_contributions[label] = shap_contributions.get(label, 0.0) + float(val) / total_abs
+            shap_contributions[label] = (
+                shap_contributions.get(label, 0.0) + entry["shap_value"] / total_abs
+            )
     except Exception as exc:
         logger.warning("SHAP computation failed: %s", exc)
 
@@ -418,11 +450,14 @@ def _shap_drivers(prop: Property) -> list[tuple[str, float]]:
     # rate — comparable to the SHAP fractions that sum to 1.0 across features.
     _, amenity_breakdown = _amenity_residual_adjustment(prop)
     if amenity_breakdown:
-        base_price = float(get_price_predictor().predict({
+        base_price = float(get_city_price_predictor().predict({
+            "city": prop.city,
             "accommodates": prop.accommodates,
             "bedrooms": prop.bedrooms,
             "bathrooms_number": prop.bathrooms,
             "has_ac": int(prop.has_ac),
+            "has_crib": int(prop.has_crib),
+            "has_dishwasher": int(prop.has_dishwasher),
             "instant_bookable": 1,
             **ctx,
         })) or 1.0
@@ -636,69 +671,9 @@ def _city_seasonality(city: str) -> list[float]:
 
 
 # ── Optimisation ──────────────────────────────────────────────────────────────
-
-@dataclass
-class Improvement:
-    name: str
-    investment_eur: float
-    monthly_revenue_uplift_eur: float
-    payback_months: float
-    confidence: Literal["high", "medium", "low"]
-    rationale: str
-
-
-def suggest_improvements(prop: Property, scen: Scenario) -> list[Improvement]:
-    """Improvement ideas ranked by payback period."""
-    items: list[Improvement] = []
-    rev_month = scen.net_revenue_year_eur / 12
-
-    if not prop.has_ac:
-        uplift = rev_month * 0.06
-        items.append(Improvement(
-            "Install air conditioning", 1800,
-            round(uplift, 0),
-            round(1800 / uplift, 1) if uplift > 0 else 99,
-            "high",
-            "AC is among the top three amenities by booking lift in warm-climate "
-            "markets; comparable listings without AC lose 5–8% of bookings in peak months.",
-        ))
-    if not prop.has_workspace:
-        uplift = rev_month * 0.04
-        items.append(Improvement(
-            "Add a dedicated workspace", 350,
-            round(uplift, 0),
-            round(350 / uplift, 1) if uplift > 0 else 99,
-            "high",
-            "Workspace amenity unlocks the long-stay segment (28+ nights) and "
-            "tends to lift weekday occupancy.",
-        ))
-    if not prop.has_balcony:
-        uplift = rev_month * 0.03
-        items.append(Improvement(
-            "Highlight outdoor space in listing", 120,
-            round(uplift, 0),
-            round(120 / uplift, 1) if uplift > 0 else 99,
-            "medium",
-            "If you have any patio, balcony, or terrace, ensuring it shows in "
-            "photos is a cheap revenue lever.",
-        ))
-    items.append(Improvement(
-        "Professional photography refresh", 250,
-        round(rev_month * 0.05, 0),
-        round(250 / max(rev_month * 0.05, 1), 1),
-        "high",
-        "Improving listing photos is the single highest-ROI change short of a renovation.",
-    ))
-    items.append(Improvement(
-        "Adopt dynamic pricing (PriceLabs / Wheelhouse)", 20 * 12,
-        round(rev_month * 0.07, 0),
-        round((20 * 12) / max(rev_month * 0.07, 1), 1),
-        "medium",
-        "Algorithmic pricing typically lifts revenue 5–10% by capturing event "
-        "spikes and softening shoulder months.",
-    ))
-    items.sort(key=lambda x: x.payback_months)
-    return items
+# The revenue-optimisation flow now lives in airbnb_iip.agents.optimisation
+# (per-amenity counterfactual / residual uplift + Apriori rules + peer-gap), and
+# is consumed directly by pages/4_Optimisation.py and the /optimise API endpoint.
 
 
 # ── Chat ──────────────────────────────────────────────────────────────────────
@@ -788,8 +763,8 @@ def chat_reply(user_msg: str, scen: Scenario | None) -> str:
 
 __all__ = [
     "CITIES", "CITY_LABELS", "ROOM_TYPES",
-    "Property", "Scenario", "Improvement",
+    "Property", "Scenario",
     "get_city_districts",
     "compute_scenario", "predict_nightly_price", "predict_sale_value",
-    "reviews_per_month_from_data", "suggest_improvements", "chat_reply",
+    "reviews_per_month_from_data", "chat_reply",
 ]

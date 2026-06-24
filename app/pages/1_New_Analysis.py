@@ -18,7 +18,6 @@ from components.branding import (
     KPMG_BLUE_TINT,
     SUCCESS,
     TEXT_MUTED,
-    TEXT_SECONDARY,
     WARNING,
     WHITE,
 )
@@ -36,7 +35,6 @@ from components.styling import (
     card,
     footer_disclaimer,
     hero,
-    recommendation_pill,
 )
 
 apply_page_style("New analysis")
@@ -48,43 +46,155 @@ hero(
          "income against indicative sale value and give a clear recommendation.",
 )
 
-# ── Form ─────────────────────────────────────────────────────────────────────
-with st.form("analysis_form", border=False):
-    col1, col2, col3 = st.columns([1, 1, 1], gap="large")
-    with col1:
-        st.markdown("**Location**")
-        city = st.selectbox("City", CITIES, format_func=lambda c: CITY_LABELS[c])
-        districts = get_city_districts(city) or ["Centro"]
-        district = st.selectbox("District", districts)
-        nickname = st.text_input(
-            "Nickname (optional)",
-            placeholder="e.g. Salamanca pied-à-terre",
-        )
-    with col2:
-        st.markdown("**Property**")
-        size_m2 = st.number_input("Size (m²)", min_value=20, max_value=400, value=85, step=5)
-        bedrooms = st.number_input("Bedrooms", min_value=0, max_value=8, value=2)
-        bathrooms = st.number_input(
-            "Bathrooms", min_value=1.0, max_value=6.0, value=1.0, step=0.5,
-        )
-        accommodates = st.number_input("Accommodates", min_value=1, max_value=16, value=4)
-    with col3:
-        st.markdown("**Listing type**")
-        room_type = st.selectbox("Room type", ROOM_TYPES)
-        st.markdown("**Amenities**")
-        has_ac        = st.checkbox("Air conditioning", value=True)
-        has_balcony   = st.checkbox("Balcony or terrace", value=False)
-        has_elevator  = st.checkbox("Elevator", value=True)
-        has_pool      = st.checkbox("Pool", value=False)
-        has_parking   = st.checkbox("Parking", value=False)
-        has_workspace = st.checkbox("Dedicated workspace", value=False)
+# ── Amenity configuration ─────────────────────────────────────────────────────
 
-    st.write("")
-    submitted = st.form_submit_button(
-        "Run analysis", use_container_width=False, type="primary",
+AMENITY_BUNDLES: dict[str, list[str]] = {
+    "(none)": [],
+    "Essentials": [
+        "has_ac", "has_elevator", "has_washer", "has_dryer",
+    ],
+    "Remote Work Ready": [
+        "has_ac", "has_elevator", "has_workspace", "has_self_checkin",
+        "has_long_term_ok", "has_dishwasher",
+    ],
+    "Premium Luxury": [
+        "has_ac", "has_elevator", "has_pool", "has_hot_tub", "has_gym",
+        "has_view", "has_balcony", "has_dishwasher",
+    ],
+    "Family Friendly": [
+        "has_ac", "has_washer", "has_dryer", "has_crib", "has_pets",
+        "has_dishwasher",
+    ],
+    "Urban Comfort": [
+        "has_ac", "has_elevator", "has_parking", "has_dishwasher",
+        "has_washer", "has_dryer",
+    ],
+}
+
+AMENITY_CATEGORIES: list[tuple[str, list[tuple[str, str]]]] = [
+    ("Comfort & Building", [
+        ("has_ac", "Air conditioning"),
+        ("has_elevator", "Elevator"),
+        ("has_bathtub", "Bathtub"),
+        ("has_hot_tub", "Hot tub / Jacuzzi"),
+        ("has_gym", "Gym / Fitness"),
+    ]),
+    ("Outdoor & Views", [
+        ("has_balcony", "Balcony or terrace"),
+        ("has_outdoor_space", "Outdoor space / Garden"),
+        ("has_view", "View / Skyline"),
+        ("has_beach", "Beach access"),
+        ("has_pool", "Pool"),
+    ]),
+    ("Work & Smart Stays", [
+        ("has_workspace", "Dedicated workspace"),
+        ("has_self_checkin", "Self check-in"),
+        ("has_long_term_ok", "Long-term stays OK"),
+        ("has_ev_charger", "EV charger"),
+        ("has_private_entrance", "Private entrance"),
+    ]),
+    ("Appliances", [
+        ("has_washer", "Washer"),
+        ("has_dryer", "Dryer"),
+        ("has_dishwasher", "Dishwasher"),
+        ("has_cleaning_service", "Cleaning service"),
+    ]),
+    ("Family & Pets", [
+        ("has_crib", "Crib / Baby bed"),
+        ("has_pets", "Pets allowed"),
+        ("has_parking", "Parking"),
+    ]),
+]
+
+_ALL_AMENITY_KEYS: list[str] = [k for _, items in AMENITY_CATEGORIES for k, _ in items]
+
+# Default-checked amenities (sensible baseline for a typical urban flat)
+_DEFAULT_ON: frozenset[str] = frozenset({"has_ac", "has_elevator"})
+
+# ── Property inputs ───────────────────────────────────────────────────────────
+# City is rendered OUTSIDE any form so that changing it immediately reruns
+# the page and the district dropdown updates to reflect the new city.
+
+col1, col2, col3 = st.columns([1, 1, 1], gap="large")
+
+with col1:
+    st.markdown("**Location**")
+    city = st.selectbox("City", CITIES, format_func=lambda c: CITY_LABELS[c])
+    districts = get_city_districts(city) or ["Centro"]
+    district = st.selectbox("District", districts)
+    nickname = st.text_input(
+        "Nickname (optional)",
+        placeholder="e.g. Salamanca pied-à-terre",
     )
 
-# ── Compute on submit (or recompute on rerun if values are in session) ───────
+with col2:
+    st.markdown("**Property**")
+    size_m2 = st.number_input("Size (m²)", min_value=20, max_value=400, value=85, step=5)
+    bedrooms = st.number_input("Bedrooms", min_value=0, max_value=8, value=2)
+    bathrooms = st.number_input(
+        "Bathrooms", min_value=1.0, max_value=6.0, value=1.0, step=0.5,
+    )
+    accommodates = st.number_input("Accommodates", min_value=1, max_value=16, value=4)
+
+with col3:
+    st.markdown("**Listing type**")
+    room_type = st.selectbox("Room type", ROOM_TYPES)
+
+# ── Amenities section ─────────────────────────────────────────────────────────
+
+st.write("")
+st.markdown("**Amenities**")
+st.caption(
+    "Select a bundle to pre-fill common configurations, then adjust individually. "
+    "All checked amenities affect the analysis: "
+    "**AC, dishwasher, and crib** feed directly into the price model; "
+    "**pool, balcony, elevator, parking, and workspace** apply data-driven price adjustments; "
+    "everything else contributes to the amenity score used to find comparable listings."
+)
+
+bun_col, apply_col = st.columns([3, 1], gap="small")
+with bun_col:
+    selected_bundle = st.selectbox(
+        "Bundle",
+        list(AMENITY_BUNDLES.keys()),
+        key="bundle_select",
+        label_visibility="collapsed",
+    )
+with apply_col:
+    if st.button("Apply bundle", use_container_width=True):
+        bundle_set = set(AMENITY_BUNDLES.get(st.session_state["bundle_select"], []))
+        for key in _ALL_AMENITY_KEYS:
+            st.session_state[f"amenity_{key}"] = key in bundle_set
+        st.rerun()
+
+# Render amenity checkboxes in category columns
+amenity_vals: dict[str, bool] = {}
+cat_cols = st.columns(len(AMENITY_CATEGORIES), gap="small")
+for i, (cat_name, items) in enumerate(AMENITY_CATEGORIES):
+    with cat_cols[i]:
+        st.caption(f"**{cat_name}**")
+        for key, label in items:
+            default = key in _DEFAULT_ON
+            amenity_vals[key] = st.checkbox(
+                label,
+                value=st.session_state.get(f"amenity_{key}", default),
+                key=f"amenity_{key}",
+            )
+
+st.write("")
+extra_text = st.text_area(
+    "Additional amenities (one per line)",
+    placeholder="e.g.\nRooftop terrace\nSauna\nBilliard table",
+    height=90,
+    help="Free-text amenities not covered above. Each line counts as one extra amenity "
+         "toward the total amenity score used in comparable-listing search.",
+)
+extra_amenities = [a.strip() for a in extra_text.splitlines() if a.strip()]
+
+st.write("")
+submitted = st.button("Run analysis", type="primary")
+
+# ── Compute on submit ─────────────────────────────────────────────────────────
 if submitted:
     prop = Property(
         city=city,
@@ -94,12 +204,29 @@ if submitted:
         bathrooms=float(bathrooms),
         accommodates=int(accommodates),
         room_type=room_type,
-        has_ac=has_ac,
-        has_balcony=has_balcony,
-        has_elevator=has_elevator,
-        has_pool=has_pool,
-        has_parking=has_parking,
-        has_workspace=has_workspace,
+        has_ac=amenity_vals["has_ac"],
+        has_elevator=amenity_vals["has_elevator"],
+        has_balcony=amenity_vals["has_balcony"],
+        has_pool=amenity_vals["has_pool"],
+        has_parking=amenity_vals["has_parking"],
+        has_workspace=amenity_vals["has_workspace"],
+        has_gym=amenity_vals["has_gym"],
+        has_hot_tub=amenity_vals["has_hot_tub"],
+        has_beach=amenity_vals["has_beach"],
+        has_view=amenity_vals["has_view"],
+        has_washer=amenity_vals["has_washer"],
+        has_dishwasher=amenity_vals["has_dishwasher"],
+        has_self_checkin=amenity_vals["has_self_checkin"],
+        has_pets=amenity_vals["has_pets"],
+        has_crib=amenity_vals["has_crib"],
+        has_private_entrance=amenity_vals["has_private_entrance"],
+        has_bathtub=amenity_vals["has_bathtub"],
+        has_dryer=amenity_vals["has_dryer"],
+        has_ev_charger=amenity_vals["has_ev_charger"],
+        has_outdoor_space=amenity_vals["has_outdoor_space"],
+        has_long_term_ok=amenity_vals["has_long_term_ok"],
+        has_cleaning_service=amenity_vals["has_cleaning_service"],
+        extra_amenities=extra_amenities,
         nickname=nickname or None,
     )
     st.session_state["property"] = prop
@@ -188,32 +315,38 @@ if scen and prop:
         )
 
     # KPI row
-    k1, k2, k3, k4 = st.columns(4, gap="medium")
+    k1, k2, k3, k4, k5 = st.columns(5, gap="medium")
     with k1:
         card(
-            "Net annual revenue",
+            "Gross annual revenue",
+            f"€{scen.gross_revenue_year_eur:,.0f}",
+            f"€{scen.predicted_nightly_eur:,.0f}/night · {scen.nights_booked_year} nights",
+        )
+    with k2:
+        card(
+            "Net profit",
             f"€{scen.net_revenue_year_eur:,.0f}",
             f"P10–P90: €{scen.net_revenue_p10_eur:,.0f} – €{scen.net_revenue_p90_eur:,.0f}",
             featured=True,
         )
-    with k2:
+    with k3:
         card(
             "Indicative sale value",
             f"€{scen.sale_price_eur:,.0f}",
             f"€{scen.sale_price_per_m2_eur:,.0f}/m²",
         )
-    with k3:
+    with k4:
         card(
             "Payback period",
             f"{scen.breakeven_years:.1f} yrs"
             if scen.breakeven_years < 50 else "50+ yrs",
-            "net income to recover sale value",
+            "net profit to recover sale value",
         )
-    with k4:
+    with k5:
         card(
             "Projected occupancy",
             f"{scen.occupancy_rate_annual*100:.0f}%",
-            f"{scen.nights_booked_year} nights · €{scen.predicted_nightly_eur:,.0f}/night",
+            f"{scen.nights_booked_year} nights/year",
         )
 
     st.write("")
@@ -223,9 +356,9 @@ if scen and prop:
     chart_left, chart_right = st.columns([1.1, 1], gap="large")
 
     with chart_left:
-        st.markdown("##### Net revenue uncertainty")
+        st.markdown("##### Net profit uncertainty")
         st.caption(
-            "Indicative P10 / median / P90 net revenue. Uncertainty is "
+            "Indicative P10 / median / P90 net profit after all costs. Uncertainty is "
             "dominated by occupancy variability."
         )
         fig = go.Figure(
@@ -287,16 +420,16 @@ if scen and prop:
 
     with bd_left:
         st.markdown("##### Cost breakdown (annual)")
-        st.caption("Costs deducted from gross to arrive at net revenue.")
+        st.caption("Costs deducted from gross revenue to arrive at net profit.")
         # Combine costs + net, sort descending so the largest bar leads.
         cost_items = list(scen.cost_breakdown) + [
-            ("Net to owner", scen.net_revenue_year_eur),
+            ("Net profit", scen.net_revenue_year_eur),
         ]
         cost_items.sort(key=lambda x: x[1], reverse=True)
         cost_labels = [name for name, _ in cost_items]
         cost_values = [v for _, v in cost_items]
         cost_colors = [
-            KPMG_BLUE_DARK if name == "Net to owner" else
+            KPMG_BLUE_DARK if name == "Net profit" else
             "#5577B0" if v >= 3000 else
             "#A8B9DD" if v >= 1500 else
             KPMG_BLUE_TINT
@@ -364,6 +497,7 @@ if scen and prop:
                 "accommodates": prop.accommodates,
                 "bedrooms": prop.bedrooms,
                 "bathrooms_number": prop.bathrooms,
+                "amenity_count": prop.amenity_count,
             },
             k=5,
         )

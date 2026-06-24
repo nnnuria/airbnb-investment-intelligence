@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 from dataclasses import asdict, fields, is_dataclass
 from functools import lru_cache
+from types import SimpleNamespace
 
 import httpx
 from dotenv import load_dotenv
@@ -138,6 +139,62 @@ def chat(
     return resp.json()
 
 
+def optimise(property, *, projected_annual_nights=None, base_url: str | None = None):
+    """Call ``/optimise`` and return a plan mirroring ``OptimisationPlan``.
+
+    The result is a namespace with ``.recommendations`` (each a namespace with
+    ``.name``, ``.annual_uplift_eur``, ``.investment_eur``, ``.payback_months``,
+    ``.confidence``, ``.method``, ``.lift``, ``.rationale``) plus the peer-gap
+    fields, so the Optimisation page reads it exactly like the in-process plan.
+    Raises :class:`APIError` if the API is unreachable.
+    """
+    client = httpx.Client(base_url=base_url, timeout=_TIMEOUT) if base_url else _client()
+    payload = dict(_as_dict(property) or {})
+    if projected_annual_nights is not None:
+        payload["projected_annual_nights"] = projected_annual_nights
+    try:
+        resp = client.post("/optimise", json=payload)
+        resp.raise_for_status()
+    except httpx.ConnectError as exc:
+        raise APIError(
+            "Can't reach the analysis API. Start it with "
+            "`uvicorn api.main:app` and try again."
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        raise APIError(
+            f"The optimisation service returned an error ({exc.response.status_code})."
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise APIError(f"Optimisation request failed: {exc}") from exc
+    finally:
+        if base_url:
+            client.close()
+
+    data = resp.json()
+    recommendations = [
+        SimpleNamespace(
+            name=a["action"],
+            annual_uplift_eur=a["annual_uplift_eur"],
+            investment_eur=a["investment_eur"],
+            payback_months=a["payback_months"],
+            confidence=a["confidence"],
+            method=a["method"],
+            lift=a.get("lift"),
+            rationale=a["rationale"],
+        )
+        for a in data.get("actions", [])
+    ]
+    return SimpleNamespace(
+        recommendations=recommendations,
+        peer_n=data.get("peer_n", 0),
+        peer_median_revenue_eur=data.get("peer_median_revenue_eur", 0.0),
+        peer_target_revenue_eur=data.get("peer_target_revenue_eur", 0.0),
+        gap_to_top_quartile_eur=data.get("gap_to_top_quartile_eur", 0.0),
+        projected_annual_nights=data.get("projected_annual_nights", 0),
+        disclaimer=data.get("disclaimer", ""),
+    )
+
+
 def api_healthy(*, base_url: str | None = None) -> bool:
     """Quick liveness check for a status indicator in the UI."""
     client = httpx.Client(base_url=base_url, timeout=httpx.Timeout(3.0)) if base_url else _client()
@@ -150,4 +207,4 @@ def api_healthy(*, base_url: str | None = None) -> bool:
             client.close()
 
 
-__all__ = ["get_scenario", "chat", "api_healthy", "APIError", "DEFAULT_API_BASE_URL"]
+__all__ = ["get_scenario", "chat", "optimise", "api_healthy", "APIError", "DEFAULT_API_BASE_URL"]

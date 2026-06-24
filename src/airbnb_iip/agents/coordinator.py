@@ -6,7 +6,7 @@ analysis context (property + scenario) and routes it to the right specialist:
     route ─┬─ decision      → Market Analyst (narrates the live scenario)
            ├─ regulatory    → Regulatory RAG agent (Gemini + FAISS)
            ├─ comparables   → Comparables agent (KNN over the ABT)
-           ├─ optimisation  → improvement ideas (engine.suggest_improvements)
+           ├─ optimisation  → improvement ideas (agents.optimisation: Apriori + gap)
            └─ general       → capability guidance
                               ↓
                            govern (disclaimer enforcement) → END
@@ -313,21 +313,33 @@ def _optimisation_node(state: ChatState) -> dict:
             "sources": [],
         }
     try:
-        from airbnb_iip.decision.engine import suggest_improvements
+        from airbnb_iip.agents.optimisation import get_optimisation_service
 
-        items = suggest_improvements(_property_from_dict(prop), _scenario_from_dict(scenario))[:3]
+        plan = get_optimisation_service().recommend(
+            prop, projected_annual_nights=scenario.get("nights_booked_year"),
+        )
+        items = plan.recommendations[:3]
     except Exception as exc:
         return {"answer": f"Couldn't compute improvements ({type(exc).__name__}).", "sources": []}
 
+    if not items:
+        return {
+            "answer": "This property already has the high-ROI amenities we'd recommend "
+                      "for its peer group — there's no obvious low-payback improvement left.",
+            "sources": ["airbnb_iip.agents.optimisation"],
+        }
     lines = [
-        f"- **{i.name}** — €{i.investment_eur:,.0f} upfront, ~€{i.monthly_revenue_uplift_eur:,.0f}/mo "
-        f"uplift, payback {i.payback_months:.1f} months"
+        f"- **{i.name}** — €{i.investment_eur:,.0f} upfront, +€{i.annual_uplift_eur:,.0f}/yr, "
+        f"payback {i.payback_months:.0f} months ({i.confidence} confidence)"
         for i in items
     ]
     return {
         "answer": "Top improvement ideas by payback:\n\n" + "\n".join(lines),
-        "sources": ["engine.suggest_improvements (ROI-ranked)"],
-        "meta": {"improvements": [i.__dict__ for i in items]},
+        "sources": ["airbnb_iip.agents.optimisation (counterfactual + residual + Apriori)"],
+        "meta": {
+            "improvements": [vars(i) for i in items],
+            "peer_gap_eur": plan.gap_to_top_quartile_eur,
+        },
     }
 
 

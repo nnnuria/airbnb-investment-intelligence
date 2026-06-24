@@ -13,7 +13,7 @@ report.
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, fields
 
 from fastapi import APIRouter
 
@@ -23,10 +23,14 @@ from api.schemas import ScenarioRequest, ScenarioResponse
 
 router = APIRouter(tags=["decision"])
 
+# Build Property only from fields it actually declares, so the request schema's
+# extra="allow" amenity flags pass through but unknown keys can't break it.
+_PROPERTY_FIELDS = {f.name for f in fields(Property)}
+
 
 @router.post("/scenario", response_model=ScenarioResponse)
 def scenario(req: ScenarioRequest) -> ScenarioResponse:
     """Run the full decision engine for one property."""
-    prop = Property(**req.model_dump())
-    result = compute_scenario(prop)
+    spec = {k: v for k, v in req.model_dump().items() if k in _PROPERTY_FIELDS}
+    result = compute_scenario(Property(**spec))
     return ScenarioResponse(**asdict(result))

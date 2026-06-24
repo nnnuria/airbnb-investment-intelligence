@@ -1,0 +1,133 @@
+[
+  {
+    "id": "226603cb-0d6c-40db-8cfe-5ef09a08f512",
+    "saved_at": "2026-06-24T15:04:52",
+    "nickname": "Salamanca",
+    "property": {
+      "city": "madrid",
+      "district": "Salamanca",
+      "size_m2": 85,
+      "bedrooms": 2,
+      "bathrooms": 1.0,
+      "accommodates": 4,
+      "room_type": "Private room",
+      "has_ac": true,
+      "has_elevator": true,
+      "has_balcony": false,
+      "has_pool": false,
+      "has_parking": false,
+      "has_workspace": true,
+      "has_gym": true,
+      "has_hot_tub": false,
+      "has_beach": false,
+      "has_view": false,
+      "has_washer": false,
+      "has_dishwasher": true,
+      "has_self_checkin": true,
+      "has_pets": false,
+      "has_crib": false,
+      "has_private_entrance": false,
+      "has_bathtub": true,
+      "has_dryer": false,
+      "has_ev_charger": true,
+      "has_outdoor_space": false,
+      "has_long_term_ok": false,
+      "has_cleaning_service": false,
+      "extra_amenities": [
+        "Sauna,",
+        "Television"
+      ],
+      "nickname": null,
+      "notes": null
+    },
+    "scenario": {
+      "recommendation": "marginal",
+      "confidence": 0.526,
+      "predicted_nightly_eur": 195.12,
+      "occupancy_rate_annual": 0.654,
+      "nights_booked_year": 235,
+      "gross_revenue_year_eur": 45853.0,
+      "net_revenue_year_eur": 21228.0,
+      "net_revenue_p10_eur": 10978.0,
+      "net_revenue_p90_eur": 32279.0,
+      "sale_price_eur": 310000.0,
+      "sale_price_per_m2_eur": 3652.0,
+      "breakeven_years": 13.0,
+      "monthly_seasonality": [
+        0.85,
+        0.88,
+        0.95,
+        1.05,
+        1.1,
+        1.05,
+        1.0,
+        0.92,
+        1.08,
+        1.1,
+        0.95,
+        1.07
+      ],
+      "cost_breakdown": [
+        [
+          "Platform fee",
+          1376.0
+        ],
+        [
+          "Cleaning",
+          3525.0
+        ],
+        [
+          "Management",
+          9171.0
+        ],
+        [
+          "Maintenance",
+          3875.0
+        ],
+        [
+          "Insurance",
+          700
+        ],
+        [
+          "Accounting",
+          1000
+        ],
+        [
+          "Income tax",
+          4979.0
+        ]
+      ],
+      "feature_drivers": [
+        [
+          "Neighbourhood",
+          0.1696872008715084
+        ],
+        [
+          "Min-nights policy",
+          0.12696591561569312
+        ],
+        [
+          "Guest capacity",
+          0.10542638785373519
+        ],
+        [
+          "Bathrooms",
+          -0.06938408075939607
+        ],
+        [
+          "Bedrooms",
+          0.05751448324566721
+        ],
+        [
+          "Booking frequency",
+          0.029074246672280417
+        ]
+      ],
+      "governance": {
+        "passed": true,
+        "human_review_required": true,
+        "violations": []
+      }
+    }
+  }
+]
