@@ -9,7 +9,7 @@ real services swap in without schema churn.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -196,6 +196,140 @@ class OptimiseResponse(BaseModel):
     disclaimer: str = "Indicative only — uplift estimates are modelled, not guaranteed."
     stub: bool = Field(default=False, alias="_stub")
     note: str = "Live — airbnb_iip.agents.optimisation (counterfactual + residual + Apriori)."
+
+
+# ── /scenario ────────────────────────────────────────────────────────────────────
+# Full Airbnb-vs-sell decision in one call. Mirrors the engine's Property /
+# Scenario dataclasses (airbnb_iip.decision.engine) field-for-field so the
+# Streamlit UI and agents share one source of truth instead of a second engine.
+
+class ScenarioRequest(BaseModel):
+    """Property spec — the single input the decision engine reads.
+
+    Field names match ``airbnb_iip.decision.engine.Property``. ``extra="allow"``
+    carries the full amenity set (Property has 22 ``has_*`` flags + free-text
+    ``extra_amenities``) without this schema having to track every one; the
+    router filters to Property's actual fields before constructing it.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    city: str = Field(examples=["madrid"])
+    district: str = Field(examples=["Salamanca"])
+    size_m2: float = Field(gt=0, examples=[85])
+    bedrooms: int = Field(ge=0, examples=[2])
+    bathrooms: float = Field(ge=0, examples=[1.0])
+    accommodates: int = Field(ge=1, examples=[4])
+    room_type: str = Field(default="Entire home/apt", examples=["Entire home/apt"])
+
+    has_balcony: bool = False
+    has_ac: bool = False
+    has_elevator: bool = False
+    has_pool: bool = False
+    has_parking: bool = False
+    has_workspace: bool = False
+
+    nickname: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ScenarioResponse(BaseModel):
+    """Full decision-engine output. Mirrors ``engine.Scenario`` field-for-field
+    so the client can rebuild the dataclass with ``Scenario(**response)``."""
+
+    recommendation: Literal["airbnb", "sell", "marginal"]
+    confidence: float
+
+    predicted_nightly_eur: float
+    occupancy_rate_annual: float
+    nights_booked_year: int
+
+    gross_revenue_year_eur: float
+    net_revenue_year_eur: float
+    net_revenue_p10_eur: float
+    net_revenue_p90_eur: float
+
+    sale_price_eur: float
+    sale_price_per_m2_eur: float
+    breakeven_years: float
+
+    npv_airbnb_p50_eur: float = 0.0
+    npv_sell_eur: float = 0.0
+    p_airbnb_gt_sell: float = 0.0
+
+    monthly_seasonality: list[float] = Field(default_factory=list)
+    # (label, eur) cost lines and (label, fraction) SHAP drivers; tuples
+    # serialise to JSON arrays and the client converts them back to tuples.
+    cost_breakdown: list[tuple[str, float]] = Field(default_factory=list)
+    feature_drivers: list[tuple[str, float]] = Field(default_factory=list)
+    governance: dict = Field(default_factory=dict)
+
+
+# ── /comparables ─────────────────────────────────────────────────────────────────
+
+class ComparablesRequest(BaseModel):
+    """Property spec for the KNN comparables agent. ``extra="allow"`` so any of
+    the agent's numeric features (accommodates/bedrooms/…) can be passed."""
+
+    model_config = ConfigDict(extra="allow")
+
+    city: str = Field(examples=["madrid"])
+    district: Optional[str] = Field(default=None, examples=["Salamanca"])
+    neighbourhood_cleansed: Optional[str] = None
+    segment: Optional[str] = None
+    room_type: Optional[str] = Field(default=None, examples=["Entire home/apt"])
+    k: int = Field(default=5, ge=1, le=25)
+
+
+class ComparablesResponse(BaseModel):
+    comparables: list[dict] = Field(default_factory=list)
+    filters_applied: dict = Field(default_factory=dict)
+    benchmark: dict = Field(default_factory=dict)
+
+
+# ── /regulatory_risk ─────────────────────────────────────────────────────────────
+
+class RegulatoryRequest(BaseModel):
+    city: str = Field(examples=["barcelona"])
+    neighbourhood: Optional[str] = Field(default=None, examples=["Eixample"])
+    question: Optional[str] = Field(
+        default=None,
+        description="Free-form regulatory question. If omitted, a default "
+                    "'can I start a new STR here?' risk check is run.",
+    )
+
+
+class RegulatoryResponse(BaseModel):
+    risk_flag: str = Field(examples=["HIGH"], description='"HIGH" | "MEDIUM" | "LOW" | "UNKNOWN"')
+    reason: str
+    sources: list[str] = Field(default_factory=list)
+    city: Optional[str] = None
+    governance: dict = Field(default_factory=dict)
+    disclaimer: str = "Indicative only — not legal advice."
+
+
+# ── /chat ────────────────────────────────────────────────────────────────────────
+
+class ChatRequest(BaseModel):
+    message: str = Field(examples=["Why this recommendation?"])
+    property: Optional[dict] = Field(
+        default=None, description="Current Property-shaped context (city, district, …)."
+    )
+    scenario: Optional[dict] = Field(
+        default=None, description="Current /scenario response for the active analysis."
+    )
+    use_llm: bool = Field(
+        default=True,
+        description="False forces the deterministic (LLM-free) answer path.",
+    )
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    intent: str = Field(examples=["decision"])
+    sources: list = Field(default_factory=list)
+    meta: dict = Field(default_factory=dict)
+    disclaimer: str = "Indicative only — not financial advice."
 
 
 # ── health ─────────────────────────────────────────────────────────────────────

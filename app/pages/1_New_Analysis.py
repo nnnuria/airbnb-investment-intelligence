@@ -21,14 +21,14 @@ from components.branding import (
     WARNING,
     WHITE,
 )
-from components.engine import (
+from airbnb_iip.decision.engine import (
     CITIES,
     CITY_LABELS,
     ROOM_TYPES,
     Property,
-    compute_scenario,
     get_city_districts,
 )
+from components.api_client import APIError, get_scenario
 from components.storage import save_record
 from components.styling import (
     apply_page_style,
@@ -230,21 +230,38 @@ if submitted:
         nickname=nickname or None,
     )
     st.session_state["property"] = prop
-    st.session_state["scenario"] = compute_scenario(prop)
-
-    # Regulatory risk — computed once per "Run analysis" click (not on every
-    # rerun) since it makes a real Gemini call; cached in session_state like
-    # the scenario itself so later reruns (e.g. clicking "Save") don't
-    # re-trigger it.
+    # The decision engine now runs behind the FastAPI /scenario endpoint; the
+    # app is a thin client of it (one source of truth, no in-process model load).
     try:
-        reg_raw = get_regulatory_agent().get_risk_flag(prop.city, prop.district)
-        st.session_state["regulatory"] = apply_regulatory_guardrails(reg_raw)
-    except Exception as exc:
-        st.session_state["regulatory"] = {"error": str(exc)}
+        st.session_state["scenario"] = get_scenario(prop)
+        st.session_state.pop("api_error", None)
+    except APIError as exc:
+        st.session_state["scenario"] = None
+        st.session_state["regulatory"] = None
+        st.session_state["api_error"] = str(exc)
+
+    # Regulatory risk — only if the core analysis succeeded. Computed once per
+    # "Run analysis" click (not on every rerun) since it makes a real Gemini
+    # call; cached in session_state like the scenario itself so later reruns
+    # (e.g. clicking "Save") don't re-trigger it.
+    if st.session_state.get("scenario") is not None:
+        try:
+            reg_raw = get_regulatory_agent().get_risk_flag(prop.city, prop.district)
+            st.session_state["regulatory"] = apply_regulatory_guardrails(reg_raw)
+        except Exception as exc:
+            st.session_state["regulatory"] = {"error": str(exc)}
 
 prop = st.session_state.get("property")
 scen = st.session_state.get("scenario")
 reg = st.session_state.get("regulatory")
+api_error = st.session_state.get("api_error")
+
+# ── API unreachable banner ───────────────────────────────────────────────────
+if api_error:
+    st.error(
+        f"**Analysis unavailable.** {api_error}",
+        icon="🚫",
+    )
 
 # ── Results ──────────────────────────────────────────────────────────────────
 if scen and prop:

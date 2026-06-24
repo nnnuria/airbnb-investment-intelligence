@@ -5,9 +5,10 @@ Run locally:
 Docs:
     http://127.0.0.1:8000/docs
 
-Endpoint status:
-    LIVE   /predict_price, /estimate_occupancy, /estimate_revenue,
-           /airbnb_vs_sell, /optimise
+Endpoint status (all LIVE):
+    /predict_price, /explain_price, /estimate_occupancy, /estimate_revenue,
+    /airbnb_vs_sell, /scenario (full decision engine), /optimise,
+    /comparables, /regulatory_risk, /chat (LangGraph coordinator)
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import optimise, predict, revenue
+from api.routers import agents, optimise, predict, revenue, scenario
 from api.schemas import HealthResponse
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,8 @@ app.add_middleware(
 
 app.include_router(predict.router)
 app.include_router(revenue.router)
+app.include_router(scenario.router)
+app.include_router(agents.router)
 app.include_router(optimise.router)
 
 

@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import streamlit as st
 
-from airbnb_iip.agents.optimisation import get_optimisation_service
+from components.api_client import APIError
+from components.api_client import optimise as api_optimise
 from components.branding import (
     BORDER_SUBTLE,
     DISCLAIMER,
@@ -22,7 +23,7 @@ from components.branding import (
     WARNING,
     WHITE,
 )
-from components.engine import CITY_LABELS
+from airbnb_iip.decision.engine import CITY_LABELS
 from components.styling import apply_page_style, footer_disclaimer, hero
 
 apply_page_style("Optimisation")
@@ -80,13 +81,9 @@ spec = {
     "has_workspace": prop.has_workspace,
 }
 try:
-    plan = get_optimisation_service().recommend(
-        spec,
-        projected_annual_nights=scen.nights_booked_year,
-        baseline_net_revenue_eur=scen.net_revenue_year_eur,
-    )
+    plan = api_optimise(spec, projected_annual_nights=scen.nights_booked_year)
     recommendations = plan.recommendations
-except Exception as exc:  # pragma: no cover - defensive UI guard
+except APIError as exc:  # pragma: no cover - defensive UI guard
     st.warning(f"Optimisation data is unavailable right now ({exc}).")
     footer_disclaimer(DISCLAIMER)
     st.stop()
