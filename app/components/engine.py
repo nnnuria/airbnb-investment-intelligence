@@ -92,6 +92,16 @@ _NON_MODEL_AMENITY_COLS: tuple[str, ...] = (
     "has_balcony", "has_elevator", "has_pool", "has_parking", "has_workspace",
 )
 
+# All 22 amenity flags (matches AMENITY_PATTERNS in src/airbnb_iip/features/amenities.py).
+_ALL_AMENITY_FIELDS: tuple[str, ...] = (
+    "has_pool", "has_gym", "has_parking", "has_hot_tub", "has_beach",
+    "has_view", "has_ac", "has_elevator", "has_washer", "has_dishwasher",
+    "has_workspace", "has_self_checkin", "has_pets", "has_crib",
+    "has_private_entrance", "has_balcony", "has_bathtub", "has_dryer",
+    "has_ev_charger", "has_outdoor_space", "has_long_term_ok",
+    "has_cleaning_service",
+)
+
 
 # ── Property + Scenario dataclasses ──────────────────────────────────────────
 
@@ -105,14 +115,39 @@ class Property:
     bathrooms: float
     accommodates: int
     room_type: str
-    has_balcony: bool = False
+    # Amenities — all 22 from AMENITY_PATTERNS (model inputs, residual adjustments, count)
     has_ac: bool = False
     has_elevator: bool = False
+    has_balcony: bool = False
     has_pool: bool = False
     has_parking: bool = False
     has_workspace: bool = False
+    has_gym: bool = False
+    has_hot_tub: bool = False
+    has_beach: bool = False
+    has_view: bool = False
+    has_washer: bool = False
+    has_dishwasher: bool = False
+    has_self_checkin: bool = False
+    has_pets: bool = False
+    has_crib: bool = False
+    has_private_entrance: bool = False
+    has_bathtub: bool = False
+    has_dryer: bool = False
+    has_ev_charger: bool = False
+    has_outdoor_space: bool = False
+    has_long_term_ok: bool = False
+    has_cleaning_service: bool = False
+    extra_amenities: list = field(default_factory=list)
     nickname: str | None = None
     notes: str | None = None
+
+    @property
+    def amenity_count(self) -> int:
+        """Total amenity count: flag-based + free-text extras."""
+        return sum(
+            1 for f in _ALL_AMENITY_FIELDS if getattr(self, f)
+        ) + len(self.extra_amenities)
 
 
 @dataclass
@@ -352,6 +387,8 @@ def predict_nightly_price(prop: Property) -> float:
         "bedrooms": prop.bedrooms,
         "bathrooms_number": prop.bathrooms,
         "has_ac": int(prop.has_ac),
+        "has_crib": int(prop.has_crib),
+        "has_dishwasher": int(prop.has_dishwasher),
         "instant_bookable": 1,
         **ctx,
     }
@@ -376,6 +413,8 @@ def _shap_drivers(prop: Property) -> list[tuple[str, float]]:
         "bedrooms": prop.bedrooms,
         "bathrooms_number": prop.bathrooms,
         "has_ac": int(prop.has_ac),
+        "has_crib": int(prop.has_crib),
+        "has_dishwasher": int(prop.has_dishwasher),
         "instant_bookable": 1,
         **ctx,
     }
@@ -415,6 +454,8 @@ def _shap_drivers(prop: Property) -> list[tuple[str, float]]:
             "bedrooms": prop.bedrooms,
             "bathrooms_number": prop.bathrooms,
             "has_ac": int(prop.has_ac),
+            "has_crib": int(prop.has_crib),
+            "has_dishwasher": int(prop.has_dishwasher),
             "instant_bookable": 1,
             **ctx,
         })) or 1.0
