@@ -111,6 +111,8 @@ def compute_noi(
     management_fee_rate: float = 0.0,
     accounting_fee_eur: float = FINANCE["accounting_fee_eur"],
     effective_tax_rate: float = FINANCE["income_tax_pct"],
+    irpf_brackets: list[tuple[float, float]] | None = None,
+    include_income_tax: bool = True,
 ) -> dict[str, float]:
     """Net Operating Income after all running costs and tax — Section 4.5.
 
@@ -119,9 +121,15 @@ def compute_noi(
     standing in for IRPF progressive brackets, since those depend on the
     owner's total income from all sources (deliberately not computed here).
 
-    Returns a dict with every deduction line plus ``noi`` (post-tax), so
-    callers can render a full income-statement breakdown rather than just
-    the bottom line.
+    When ``irpf_brackets`` is provided, progressive bracket laddering
+    replaces the flat ``effective_tax_rate`` (same algorithm as
+    :func:`airbnb_iip.finance.scenarios.capital_gains_tax`).
+
+    When ``include_income_tax=False``, no income tax is applied and ``noi``
+    equals ``pre_tax_noi`` — useful for showing the gross-of-tax comparison.
+
+    Returns a dict with every deduction line plus ``noi`` (post-tax) and
+    ``pre_tax_noi``, so callers can render a full income-statement breakdown.
 
     Raises
     ------
@@ -165,9 +173,15 @@ def compute_noi(
         "accounting_fee": accounting_fee_eur,
     }
     pre_tax_noi = gross_revenue - sum(deductions.values())
-    # Tax applies to taxable profit, not a loss; a loss-making year owes no
-    # income tax on STR activity (still pre_tax_noi as the cash result).
-    tax = effective_tax_rate * max(pre_tax_noi, 0.0)
+
+    if not include_income_tax:
+        tax = 0.0
+    elif irpf_brackets is not None:
+        tax = _progressive_tax(max(pre_tax_noi, 0.0), irpf_brackets)
+    else:
+        # Flat rate standing in for IRPF; a loss-making year owes no tax.
+        tax = effective_tax_rate * max(pre_tax_noi, 0.0)
+
     noi = pre_tax_noi - tax
 
     return {
@@ -177,6 +191,19 @@ def compute_noi(
         "tax": tax,
         "noi": noi,
     }
+
+
+def _progressive_tax(income: float, brackets: list[tuple[float, float]]) -> float:
+    """Apply progressive tax brackets to ``income`` using the ladder algorithm."""
+    tax = 0.0
+    lower = 0.0
+    for upper, rate in brackets:
+        if income <= lower:
+            break
+        slice_amount = min(income, upper) - lower
+        tax += slice_amount * rate
+        lower = upper
+    return tax
 
 
 def _validate_rate(name: str, value: float) -> None:

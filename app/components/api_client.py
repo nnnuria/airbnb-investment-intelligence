@@ -58,19 +58,48 @@ def _to_scenario(data: dict) -> Scenario:
 
 
 def get_scenario(
-    prop: Property, *, managed: bool = True, base_url: str | None = None
+    prop: Property,
+    *,
+    managed: bool = True,
+    ibi_eur: float | None = None,
+    cadastral_value: float | None = None,
+    basuras_eur: float | None = None,
+    setup_cost_eur: float = 1500.0,
+    noi_growth_rate: float = 0.025,
+    property_appreciation_rate: float = 0.03,
+    include_income_tax: bool = True,
+    purchase_price: float | None = None,
+    base_url: str | None = None,
 ) -> Scenario:
     """POST a property to ``/scenario`` and return the full Scenario.
 
     ``managed`` selects professional management (``True``) vs self-managed
     (``False``, which drops the 20% management fee from the decision).
+    The remaining keyword arguments are financial assumption overrides forwarded
+    to ``compute_scenario``; see ``api/schemas.py::ScenarioRequest`` for details.
 
     Raises :class:`APIError` (with a friendly message) if the API is down or
     responds with an error, so the caller can surface it cleanly.
     """
     client = httpx.Client(base_url=base_url, timeout=_TIMEOUT) if base_url else _client()
+    payload = {
+        **asdict(prop),
+        "managed": managed,
+        "setup_cost_eur": setup_cost_eur,
+        "noi_growth_rate": noi_growth_rate,
+        "property_appreciation_rate": property_appreciation_rate,
+        "include_income_tax": include_income_tax,
+    }
+    if ibi_eur is not None:
+        payload["ibi_eur"] = ibi_eur
+    if cadastral_value is not None:
+        payload["cadastral_value"] = cadastral_value
+    if basuras_eur is not None:
+        payload["basuras_eur"] = basuras_eur
+    if purchase_price is not None:
+        payload["purchase_price"] = purchase_price
     try:
-        resp = client.post("/scenario", json={**asdict(prop), "managed": managed})
+        resp = client.post("/scenario", json=payload)
         resp.raise_for_status()
     except httpx.ConnectError as exc:
         raise APIError(

@@ -152,11 +152,23 @@ st.caption(
     "everything else contributes to the amenity score used to find comparable listings."
 )
 
+_AMENITY_KEY_TO_LABEL: dict[str, str] = {
+    key: label for _, items in AMENITY_CATEGORIES for key, label in items
+}
+
+def _bundle_format(name: str) -> str:
+    keys = AMENITY_BUNDLES.get(name, [])
+    if not keys:
+        return name
+    labels = ", ".join(_AMENITY_KEY_TO_LABEL.get(k, k) for k in keys)
+    return f"{name} — {labels}"
+
 bun_col, apply_col = st.columns([3, 1], gap="small")
 with bun_col:
     selected_bundle = st.selectbox(
         "Bundle",
         list(AMENITY_BUNDLES.keys()),
+        format_func=_bundle_format,
         key="bundle_select",
         label_visibility="collapsed",
     )
@@ -190,6 +202,90 @@ extra_text = st.text_area(
          "toward the total amenity score used in comparable-listing search.",
 )
 extra_amenities = [a.strip() for a in extra_text.splitlines() if a.strip()]
+
+st.write("")
+
+# ── Advanced financial assumptions ────────────────────────────────────────────
+st.write("")
+st.markdown("**Financial assumptions**")
+st.caption(
+    "Defaults are set to representative Spanish market values. "
+    "Adjust to reflect your property's actual costs and your investment horizon."
+)
+adv_col1, adv_col2, adv_col3 = st.columns(3, gap="large")
+with adv_col1:
+    st.markdown("**Property costs**")
+    cadastral_value_input = st.number_input(
+        "Cadastral value (€) — for IBI",
+        min_value=0,
+        max_value=2_000_000,
+        value=0,
+        step=5_000,
+        help="Valor catastral — appears on your IBI bill or Agencia Tributaria online. "
+             "Leave at 0 and the agent will estimate it from the modelled sale price.",
+    )
+    ibi_eur_override_input = st.number_input(
+        "IBI manual override (€/year, optional)",
+        min_value=0,
+        max_value=10_000,
+        value=0,
+        step=50,
+        help="Override the computed IBI with a known amount. "
+             "Takes priority over the cadastral value input above.",
+    )
+    setup_cost_input = st.number_input(
+        "Airbnb setup cost (€)",
+        min_value=0,
+        max_value=50_000,
+        value=1_500,
+        step=500,
+        help="One-time upfront cost to prepare the property for Airbnb: "
+             "professional photography, deep clean, linen and supplies, minor repairs. "
+             "Minimum recommended: €1,500.",
+    )
+    purchase_price_input = st.number_input(
+        "Original purchase price (€) — for CGT",
+        min_value=0,
+        max_value=5_000_000,
+        value=0,
+        step=10_000,
+        help="Used to calculate capital gains tax on sale. "
+             "Leave at 0 to use a model default (70% of current estimated value).",
+    )
+with adv_col2:
+    st.markdown("**Growth assumptions**")
+    noi_growth_pct = st.slider(
+        "Annual rent growth (%)",
+        min_value=0.0,
+        max_value=8.0,
+        value=2.5,
+        step=0.5,
+        format="%.1f%%",
+        help="Expected annual increase in Airbnb revenue (CPI/HPI blend). "
+             "Spain 10-yr avg: CPI ~2%, rental index ~3%. Default: 2.5%.",
+    )
+    appreciation_pct = st.slider(
+        "Annual property appreciation (%)",
+        min_value=0.0,
+        max_value=8.0,
+        value=3.0,
+        step=0.5,
+        format="%.1f%%",
+        help="Expected annual property price growth, applied to the terminal "
+             "sale value at the end of the 10-year horizon.",
+    )
+with adv_col3:
+    st.markdown("**Tax options**")
+    include_tax = st.toggle(
+        "Include income tax in analysis",
+        value=True,
+        help="When on, IRPF progressive brackets (19–47%) are applied to STR "
+             "rental profit. Turn off to see the pre-tax comparison alongside.",
+    )
+    st.caption(
+        "Both pre-tax and post-tax NPV figures are always shown in the results. "
+        "This toggle determines which drives the primary recommendation."
+    )
 
 st.write("")
 submitted = st.button("Run analysis", type="primary")
@@ -234,7 +330,15 @@ if submitted:
     # app is a thin client of it (one source of truth, no in-process model load).
     try:
         st.session_state["scenario"] = get_scenario(
-            prop, managed=st.session_state.get("managed_toggle", True)
+            prop,
+            managed=st.session_state.get("managed_toggle", True),
+            ibi_eur=float(ibi_eur_override_input) if ibi_eur_override_input > 0 else None,
+            cadastral_value=float(cadastral_value_input) if cadastral_value_input > 0 else None,
+            setup_cost_eur=float(setup_cost_input),
+            noi_growth_rate=noi_growth_pct / 100.0,
+            property_appreciation_rate=appreciation_pct / 100.0,
+            include_income_tax=include_tax,
+            purchase_price=float(purchase_price_input) if purchase_price_input > 0 else None,
         )
         st.session_state.pop("api_error", None)
     except APIError as exc:
@@ -332,6 +436,20 @@ if scen and prop:
             ),
         )
 
+    # ── Regulatory risk banner (shown ABOVE KPIs when risk is HIGH/UNKNOWN) ──
+    if reg and "error" not in reg:
+        risk_flag = reg.get("risk_flag", "UNKNOWN")
+        if risk_flag in ("HIGH", "UNKNOWN"):
+            sources_txt = "; ".join(reg.get("sources", [])) or "see official municipal sources"
+            st.warning(
+                f"**⚠️ Regulatory risk: {risk_flag}** — STR licensing in "
+                f"{prop.district}, {CITY_LABELS[prop.city]} may be restricted or "
+                f"unavailable. This has been factored into the recommendation "
+                f"(confidence capped at Marginal). "
+                f"Verify with official sources before proceeding.\n\n"
+                f"Sources: {sources_txt}"
+            )
+
     # ── Governance banner ────────────────────────────────────────────────────
     gov = scen.governance or {}
     violations = gov.get("violations", [])
@@ -382,6 +500,61 @@ if scen and prop:
             f"{scen.occupancy_rate_annual*100:.0f}%",
             f"{scen.nights_booked_year} nights/year",
         )
+
+    st.write("")
+
+    # ── NPV & IRR comparison row ─────────────────────────────────────────────
+    st.markdown("##### Investment comparison (10-year horizon)")
+    irr_col, npv_ab_col, npv_ab_pre_col, npv_s_col, npv_s_pre_col = st.columns(5, gap="medium")
+    with irr_col:
+        irr_display = (
+            f"{scen.irr_airbnb_pct * 100:.1f}%"
+            if scen.irr_airbnb_pct is not None
+            else "—"
+        )
+        card(
+            "IRR (Airbnb, 10yr)",
+            irr_display,
+            "Internal rate of return on setup investment",
+            featured=True,
+        )
+    with npv_ab_col:
+        card(
+            "NPV Airbnb (after-tax)",
+            f"€{scen.npv_airbnb_p50_eur:,.0f}",
+            "P50 · with income tax & CGT",
+        )
+    with npv_ab_pre_col:
+        card(
+            "NPV Airbnb (pre-tax)",
+            f"€{scen.npv_airbnb_pretax_p50_eur:,.0f}",
+            "P50 · before income tax",
+        )
+    with npv_s_col:
+        card(
+            "Sell net (after CGT)",
+            f"€{scen.npv_sell_eur:,.0f}",
+            "After agent fees + capital gains tax",
+        )
+    with npv_s_pre_col:
+        card(
+            "Sell gross (pre-tax)",
+            f"€{scen.npv_sell_pretax_eur:,.0f}",
+            "Before CGT — no reinvestment assumed",
+        )
+
+    _ibi_method_label = {"cadastral": "exact cadastral", "manual": "manual override", "estimated": "estimated"}.get(
+        getattr(scen, "ibi_method", "estimated"), "estimated"
+    )
+    st.caption(
+        f"IBI applied: **€{scen.ibi_eur_used:,.0f}/yr** ({_ibi_method_label}) · "
+        f"Basuras: **€{getattr(scen, 'basuras_eur_used', 0):,.0f}/yr** · "
+        f"Setup cost: **€{scen.setup_cost_eur_used:,.0f}** · "
+        "Discount rate: 7% · Holding period: 10 years"
+    )
+    _ibi_explanation = getattr(scen, "ibi_explanation", "")
+    if _ibi_explanation:
+        st.caption(f"IBI derivation: {_ibi_explanation}")
 
     st.write("")
     st.write("")
@@ -615,8 +788,43 @@ if scen and prop:
     st.write("")
     st.write("")
 
+    # ── Detailed cost breakdown table ────────────────────────────────────────
+    with st.expander("Full cost breakdown (itemised)", expanded=False):
+        if scen.cost_breakdown:
+            gross = scen.gross_revenue_year_eur or 1
+            total_costs = sum(v for _, v in scen.cost_breakdown)
+            rows_data = [
+                {
+                    "Cost item": label,
+                    "€ / year": f"€{value:,.0f}",
+                    "Share of gross": f"{value / gross * 100:.1f}%",
+                }
+                for label, value in scen.cost_breakdown
+            ]
+            rows_data.append({
+                "Cost item": "**Total costs**",
+                "€ / year": f"**€{total_costs:,.0f}**",
+                "Share of gross": f"**{total_costs / gross * 100:.1f}%**",
+            })
+            st.markdown(
+                "\n".join(
+                    ["| Cost item | €/year | Share of gross |", "|-----------|--------|----------------|"]
+                    + [f"| {r['Cost item']} | {r['€ / year']} | {r['Share of gross']} |" for r in rows_data]
+                )
+            )
+            st.caption(
+                f"Gross revenue: €{gross:,.0f}/yr · "
+                f"Net profit: €{scen.net_revenue_year_eur:,.0f}/yr · "
+                f"Income tax included: {'Yes' if any('tax' in l.lower() for l, _ in scen.cost_breakdown) else 'No'}"
+            )
+        else:
+            st.info("Cost breakdown not available for this analysis.")
+
+    st.write("")
+
     # ── Regulatory risk ──────────────────────────────────────────────────────
-    with st.expander("Regulatory risk — STR licensing for this district", expanded=False):
+    _reg_expanded = bool(reg and "error" not in reg and reg.get("risk_flag") in ("HIGH", "UNKNOWN"))
+    with st.expander("Regulatory risk — STR licensing for this district", expanded=_reg_expanded):
         if not reg:
             st.info("No regulatory check available for this analysis.")
         elif "error" in reg:
