@@ -42,6 +42,16 @@ model) to `models/sale_best_model.pkl`.
 **Design:** persisting the whole Pipeline means serving never re-implements
 preprocessing — it just loads and calls `.predict`. `price_per_m2` is excluded
 (it is `price ÷ size` → leakage).
+
+**Amenities:** Idealista sale listings carry no structured amenity array, so 8
+binary amenity flags (pool, parking, terrace, A/C, garden, storage, heating,
+balcony) are mined from the free-text `description` + ad title by
+`airbnb_iip.features.sale_amenities` and fed in as a binary feature group. This
+is what lets a pool/parking toggle move the predicted sale price.
+
+> **Reproducible retrain:** `python scripts/train_sale_model.py` runs this exact
+> pipeline headless and backs up the previous model to `*_legacy.*` first. This
+> notebook is the narrated reference.
 """)
 
 md("## 1. Load & build the model frame")
@@ -57,11 +67,12 @@ import seaborn as sns
 sns.set_theme(style="whitegrid"); plt.rcParams["figure.dpi"] = 110
 
 from airbnb_iip.data.idealista_sale import load_clean_sale
+from airbnb_iip.features.sale_amenities import SALE_AMENITY_COLUMNS
 
 ROOT = Path.cwd().parent if Path.cwd().name == "notebooks" else Path.cwd()
 MODELS = ROOT / "models"; MODELS.mkdir(exist_ok=True)
 
-df = load_clean_sale()
+df = load_clean_sale()   # carries 8 text-mined amenity flags
 
 # Gentle target trim: drop the extreme 0.5% tails so a few mansions don't dominate.
 lo, hi = df["price"].quantile([0.005, 0.995])
@@ -74,6 +85,8 @@ for c in ["has_lift", "exterior", "new_development"]:
     )
 for c in ["district", "neighborhood", "status"]:
     df[c] = df[c].fillna("unknown")
+for c in SALE_AMENITY_COLUMNS:          # amenity flags -> clean int {0,1}
+    df[c] = df[c].fillna(0).astype(int)
 
 df["y"] = np.log1p(df["price"])
 print(f"model frame: {len(df):,} rows  (price €{lo:,.0f}–€{hi:,.0f})")
@@ -90,7 +103,8 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler, TargetEncoder
 NUM      = ["size_m2", "rooms", "bathrooms", "floor_num", "latitude", "longitude"]
 LOWCARD  = ["property_type", "status", "city", "has_lift", "exterior", "new_development"]
 HIGHCARD = ["district", "neighborhood"]          # target-encoded (cross-fitted)
-FEATURES = NUM + LOWCARD + HIGHCARD
+BINARY   = list(SALE_AMENITY_COLUMNS)            # text-mined amenity flags {0,1}
+FEATURES = NUM + LOWCARD + HIGHCARD + BINARY
 TARGET   = "y"
 SEED     = 42
 
@@ -110,10 +124,13 @@ def make_preprocessor(scale_numeric: bool) -> ColumnTransformer:
             ("impute", SimpleImputer(strategy="constant", fill_value="unknown")),
             ("te", TargetEncoder(target_type="continuous", random_state=SEED)),
         ]), HIGHCARD),
+        # Binary amenity flags: a missing/un-toggled flag is "not advertised" → 0,
+        # NOT a median (which would leak the amenity premium into blank inputs).
+        ("bin", SimpleImputer(strategy="constant", fill_value=0), BINARY),
     ])
 
-print("features:", len(FEATURES), "| numeric:", len(NUM),
-      "| low-card OHE:", len(LOWCARD), "| high-card target-enc:", len(HIGHCARD))
+print("features:", len(FEATURES), "| numeric:", len(NUM), "| low-card OHE:", len(LOWCARD),
+      "| high-card target-enc:", len(HIGHCARD), "| binary amenities:", len(BINARY))
 """)
 
 md("## 3. Train / test split")
@@ -215,7 +232,9 @@ meta = {
     "target": "log1p(price)",
     "input_features": FEATURES,
     "num": NUM, "lowcard_onehot": LOWCARD, "highcard_target_enc": HIGHCARD,
+    "binary_amenities": BINARY,
     "excluded_leakage": ["price_per_m2"],
+    "amenity_source": "text-mined from description + suggestedTexts.title",
     "test_metrics": eur_metrics(y_te, best.predict(X_te)),
     "n_train": int(len(X_tr)), "n_test": int(len(X_te)),
 }
