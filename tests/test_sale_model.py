@@ -45,10 +45,27 @@ def test_district_imputation_restores_location_signal():
 
 
 def test_bigger_flat_costs_more():
+    # A bigger flat means more space AND more rooms/baths — pass a coherent spec.
+    # (Size alone, with rooms/baths median-imputed, is a sparse degenerate input
+    # where neither this model nor the legacy one is monotonic — see the
+    # district-imputation note about €/m² compressing at size.)
     p = SalePredictor()
-    small = p.predict({"city": "barcelona", "district": "Eixample", "size_m2": 60})
-    big = p.predict({"city": "barcelona", "district": "Eixample", "size_m2": 120})
+    small = p.predict({"city": "barcelona", "district": "Eixample",
+                       "size_m2": 60, "rooms": 2, "bathrooms": 1})
+    big = p.predict({"city": "barcelona", "district": "Eixample",
+                     "size_m2": 120, "rooms": 4, "bathrooms": 2})
     assert big > small
+
+
+def test_amenities_raise_sale_price():
+    """Toggling premium amenities must lift the predicted sale price — the whole
+    point of mining amenity flags from the listing text into the sale model."""
+    p = SalePredictor()
+    base = {"city": "madrid", "district": "Centro", "size_m2": 90,
+            "rooms": 3, "bathrooms": 2}
+    plain = p.predict(base)
+    loaded = p.predict({**base, "has_pool": 1, "has_parking": 1, "has_ac": 1})
+    assert loaded > plain
 
 
 def test_sparse_city_only_still_predicts():

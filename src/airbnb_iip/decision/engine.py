@@ -486,6 +486,16 @@ def predict_sale_value(prop: Property) -> tuple[float, float]:
         "rooms": prop.bedrooms,
         "bathrooms": prop.bathrooms,
         "has_lift": int(prop.has_elevator),
+        # Text-mined amenity flags the sale model now learns from. Mapped from
+        # the property's Airbnb-style toggles where one exists; the three with no
+        # UI equivalent (terrace / storage / heating) stay at the model's
+        # "not advertised" baseline (0). has_garden ← outdoor_space, since the
+        # Airbnb flag bundles garden/backyard/courtyard.
+        "has_pool": int(prop.has_pool),
+        "has_parking": int(prop.has_parking),
+        "has_ac": int(prop.has_ac),
+        "has_balcony": int(prop.has_balcony),
+        "has_garden": int(prop.has_outdoor_space),
     })
     per_m2 = total / prop.size_m2 if prop.size_m2 > 0 else 0.0
     return round(total, -3), round(per_m2, 0)

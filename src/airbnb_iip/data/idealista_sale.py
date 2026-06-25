@@ -2,9 +2,11 @@
 
 Reads the raw Apify JSONL dumps
 (``data/raw/idealista/<city>/sale_<date>.jsonl``) into a tidy, analysis-ready
-DataFrame for the **sell-price model**. Scope (v1) is the structured fields with
-near-complete coverage; the rich ``features`` dict, ``detailedType`` and the
-free-text ``description`` are deliberately left for a later iteration.
+DataFrame for the **sell-price model**. Scope is the structured fields with
+near-complete coverage, plus binary amenity flags mined from the free-text
+``description`` + ``suggestedTexts.title`` (see
+:mod:`airbnb_iip.features.sale_amenities`). The rich ``features`` dict and
+``detailedType`` are deliberately left for a later iteration.
 
 Design notes
 ------------
@@ -53,6 +55,7 @@ COLUMN_MAP: dict[str, str] = {
     "province": "province",
     "latitude": "latitude",
     "longitude": "longitude",
+    "description": "description",   # free text — mined for amenity flags
     "_city": "city",
 }
 
@@ -63,6 +66,13 @@ _BOOL_COLS = ("has_lift", "exterior", "new_development")
 # Idealista non-numeric floor codes → numeric level.
 #   bj = bajo (ground), en = entresuelo (mezzanine), ss = semisótano, st = sótano
 _FLOOR_CODES: dict[str, float] = {"bj": 0.0, "en": 0.5, "ss": -1.0, "st": -1.0}
+
+
+def _extract_title(value) -> str:
+    """Pull ``title`` out of an Idealista ``suggestedTexts`` cell (dict or NaN)."""
+    if isinstance(value, Mapping):
+        return str(value.get("title") or "")
+    return ""
 
 
 def parse_floor(value) -> float:
@@ -88,8 +98,16 @@ def tidy_records(records: list[dict], default_city: str | None = None) -> pd.Dat
     if default_city is not None and "_city" not in df.columns:
         df["_city"] = default_city
 
+    # Pull the ad title out of the nested suggestedTexts dict before the column
+    # select drops it; the amenity miner appends it to the description text.
+    if "suggestedTexts" in df.columns:
+        df["_ad_title"] = df["suggestedTexts"].map(_extract_title)
+
     keep = [c for c in COLUMN_MAP if c in df.columns]
-    df = df[keep].rename(columns={c: COLUMN_MAP[c] for c in keep})
+    rename = {c: COLUMN_MAP[c] for c in keep}
+    if "_ad_title" in df.columns:
+        keep.append("_ad_title")          # passthrough — kept as-is, not renamed
+    df = df[keep].rename(columns=rename)
 
     for col in _NUMERIC_COLS:
         if col in df.columns:
@@ -193,5 +211,12 @@ def load_clean_sale(
     cities: tuple[str, ...] = CITIES,
     paths: Mapping[str, Path | str] | None = None,
 ) -> pd.DataFrame:
-    """Convenience: :func:`load_sale_listings` → :func:`clean_sale_listings`."""
-    return clean_sale_listings(load_sale_listings(raw_dir, cities, paths))
+    """Load → clean → append text-mined amenity flags.
+
+    :func:`load_sale_listings` → :func:`clean_sale_listings` →
+    :func:`airbnb_iip.features.sale_amenities.add_sale_amenity_flags`.
+    """
+    from airbnb_iip.features.sale_amenities import add_sale_amenity_flags
+
+    df = clean_sale_listings(load_sale_listings(raw_dir, cities, paths))
+    return add_sale_amenity_flags(df)

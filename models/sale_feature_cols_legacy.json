@@ -15,15 +15,7 @@
     "exterior",
     "new_development",
     "district",
-    "neighborhood",
-    "has_pool",
-    "has_parking",
-    "has_terrace",
-    "has_ac",
-    "has_garden",
-    "has_storage",
-    "has_heating",
-    "has_balcony"
+    "neighborhood"
   ],
   "num": [
     "size_m2",
@@ -45,25 +37,14 @@
     "district",
     "neighborhood"
   ],
-  "binary_amenities": [
-    "has_pool",
-    "has_parking",
-    "has_terrace",
-    "has_ac",
-    "has_garden",
-    "has_storage",
-    "has_heating",
-    "has_balcony"
-  ],
   "excluded_leakage": [
     "price_per_m2"
   ],
-  "amenity_source": "text-mined from description + suggestedTexts.title",
   "test_metrics": {
-    "MAE_eur": 47272,
-    "RMSE_eur": 92041,
-    "R2": 0.868,
-    "MAPE_%": 13.9
+    "MAE_eur": 48543,
+    "RMSE_eur": 95318,
+    "R2": 0.859,
+    "MAPE_%": 14.4
   },
   "n_train": 11774,
   "n_test": 2944
