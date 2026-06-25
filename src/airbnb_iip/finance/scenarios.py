@@ -118,6 +118,7 @@ def npv_airbnb(
     terminal_value_net: float = 0.0,
     discount_rate: float = 0.07,
     setup_cost: float = 0.0,
+    noi_growth_rate: float = 0.0,
 ) -> float:
     """Discounted present value of holding the property as an Airbnb.
 
@@ -129,7 +130,9 @@ def npv_airbnb(
     noi_annual
         Either a constant annual NOI (flat across the horizon — pass
         ``years``) or a sequence of per-year NOI values (one entry per year,
-        ``years`` inferred from its length).
+        ``years`` inferred from its length). When a scalar is passed and
+        ``noi_growth_rate > 0``, each year's NOI compounds at that rate:
+        ``NOI_t = noi_annual × (1 + g)^(t-1)``.
     years
         Holding horizon. Required if ``noi_annual`` is a single number;
         ignored (and inferred) if it is a sequence.
@@ -142,16 +145,25 @@ def npv_airbnb(
         framework doc's typical range (6–9%).
     setup_cost
         One-time upfront cost (STR licence, furnishing/refurbishment).
+    noi_growth_rate
+        Annual NOI growth rate ``g`` (CPI/HPI blend). Applied only when
+        ``noi_annual`` is a scalar; ignored when a series is passed explicitly.
+        Defaults to 0 (flat NOI, backwards-compatible).
     """
     if discount_rate <= 0:
         raise ValueError(f"discount_rate must be > 0, got {discount_rate}")
     if setup_cost < 0:
         raise ValueError(f"setup_cost must be >= 0, got {setup_cost}")
+    if noi_growth_rate < 0:
+        raise ValueError(f"noi_growth_rate must be >= 0, got {noi_growth_rate}")
 
     if isinstance(noi_annual, (int, float)):
         if not years or years <= 0:
             raise ValueError("years must be a positive int when noi_annual is scalar")
-        noi_series = [float(noi_annual)] * years
+        noi_series = [
+            float(noi_annual) * (1 + noi_growth_rate) ** t
+            for t in range(years)
+        ]
     else:
         noi_series = list(noi_annual)
         if not noi_series:
@@ -163,6 +175,48 @@ def npv_airbnb(
     )
     pv_terminal = terminal_value_net / (1 + discount_rate) ** years
     return pv_noi + pv_terminal - setup_cost
+
+
+def irr_airbnb(
+    noi_series: Sequence[float],
+    *,
+    setup_cost: float = 0.0,
+    terminal_value_net: float = 0.0,
+) -> float | None:
+    """Internal Rate of Return for the Airbnb cash-flow sequence.
+
+    Solves for ``r`` such that NPV = 0:
+
+    ``0 = −C_setup + Σ_t NOI_t / (1+r)^t  +  P_terminal / (1+r)^T``
+
+    Uses ``scipy.optimize.brentq`` bracketed on (−0.5, 2.0). Returns ``None``
+    if the cash-flow sequence has no sign change (e.g. always negative) or if
+    the solver fails to converge within the bracket.
+
+    Parameters
+    ----------
+    noi_series
+        Per-year NOI values (already tax-adjusted). Length = holding horizon T.
+    setup_cost
+        One-time upfront investment (subtracted at t=0).
+    terminal_value_net
+        Net sale proceeds credited at the end of year T.
+    """
+    from scipy.optimize import brentq
+
+    cash_flows = [-setup_cost] + list(noi_series)
+    cash_flows[-1] += terminal_value_net  # add terminal value to last year
+
+    def _npv(r: float) -> float:
+        return sum(cf / (1 + r) ** t for t, cf in enumerate(cash_flows))
+
+    try:
+        f_lo, f_hi = _npv(-0.50), _npv(2.0)
+        if f_lo * f_hi >= 0:
+            return None  # no sign change → no real IRR in this range
+        return brentq(_npv, -0.50, 2.0, xtol=1e-8, maxiter=200)
+    except Exception:
+        return None
 
 
 def break_even_horizon(
@@ -228,6 +282,7 @@ def monte_carlo(
     discount_rate: float = 0.07,
     setup_cost: float = 0.0,
     terminal_value_net: float = 0.0,
+    noi_growth_rate: float = 0.0,
     n_simulations: int = 10_000,
     random_state: int | None = None,
 ) -> dict[str, float]:
@@ -236,9 +291,10 @@ def monte_carlo(
     Per Section 7 of the framework doc: price and occupancy are each drawn
     from a Normal centred on the ML point estimate, with sigma a fraction of
     the point estimate (defaults: 22.5% for price, 20% for occupancy — the
-    midpoints of the doc's suggested ranges). Each draw computes one annual
-    NOI (via :func:`airbnb_iip.finance.costs.compute_noi`) and discounts it
-    flat across ``years`` to get one NPV_airbnb sample.
+    midpoints of the doc's suggested ranges). Each draw computes year-1 NOI
+    (via :func:`airbnb_iip.finance.costs.compute_noi`) and applies
+    ``noi_growth_rate`` compounding across the holding period to get one
+    NPV_airbnb sample.
 
     ``cost_kwargs`` are passed straight to ``compute_noi`` (minus
     ``gross_revenue``, which this function computes per-sample) — e.g.
@@ -264,13 +320,14 @@ def monte_carlo(
     npvs = np.empty(n_simulations)
     for i in range(n_simulations):
         gross = annual_gross_revenue(price_draws[i], occ_draws[i])
-        noi = compute_noi(gross, **cost_kwargs)["noi"]
+        noi_yr1 = compute_noi(gross, **cost_kwargs)["noi"]
         npvs[i] = npv_airbnb(
-            noi,
+            noi_yr1,
             years=years,
             terminal_value_net=terminal_value_net,
             discount_rate=discount_rate,
             setup_cost=setup_cost,
+            noi_growth_rate=noi_growth_rate,
         )
 
     p10, p50, p90 = np.percentile(npvs, [10, 50, 90])

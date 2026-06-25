@@ -44,13 +44,15 @@ class ChatState(TypedDict, total=False):
     meta: dict
 
 
-INTENTS = ("decision", "regulatory", "comparables", "optimisation", "general")
+INTENTS = ("financial", "decision", "regulatory", "comparables", "optimisation", "general")
 
 
 def classify(message: str) -> str:
     """Keyword intent classifier. Order matters — the more specific topics are
     checked before the broad 'decision' bucket (which owns generic words like
-    'price' and 'why')."""
+    'price' and 'why'). 'financial' is checked before 'decision' so that
+    detailed financial questions (IRR, tax, IBI, cost breakdown) get the
+    specialist agent rather than the general market narrative."""
     m = (message or "").lower()
     if any(k in m for k in ("regulat", "licen", "legal", "permit", "law", "allowed to rent")):
         return "regulatory"
@@ -59,8 +61,17 @@ def classify(message: str) -> str:
     if any(k in m for k in ("improve", "optimis", "optimiz", "amenity", "amenities", "uplift", "renovat", "upgrade", "add ")):
         return "optimisation"
     if any(k in m for k in (
+        "irr", "internal rate", "return on invest",
+        "ibi", "property tax", "impuesto",
+        "income tax", "irpf", "tax impact", "after.tax", "pre.tax", "pre tax", "post tax",
+        "cost breakdown", "break down cost", "itemis", "itemiz",
+        "setup cost", "setup investment",
+        "npv", "net present value",
+    )):
+        return "financial"
+    if any(k in m for k in (
         "sell", "sale", "revenue", "income", "earn", "occupancy", "booked",
-        "price", "nightly", "rate", "why", "recommend", "invest", "npv",
+        "price", "nightly", "rate", "why", "recommend", "invest",
         "break", "yield", "profit",
         "cost", "fee", "tax", "expens", "deduct", "noi", "net",
     )):
@@ -233,6 +244,32 @@ def _deterministic_decision_answer(question: str, facts: dict) -> str:
         f"€{facts['annual_net_eur']:,.0f}/yr, break-even {facts['break_even_years']} years. "
         f"Strongest price drivers: {', '.join(d['feature'] for d in facts['drivers'][:3])}."
     )
+
+
+def _financial_node(state: ChatState) -> dict:
+    """Route to FinancialAnalystAgent for IRR, tax, IBI, and cost breakdown questions."""
+    scenario = state.get("scenario")
+    if not scenario:
+        return {
+            "answer": (
+                "I don't have an analysis loaded yet. Run a property analysis first, "
+                "then ask me about IRR, tax impact, IBI, or the cost breakdown."
+            ),
+            "sources": [],
+        }
+    try:
+        from airbnb_iip.agents.financial_analyst import FinancialAnalystAgent
+        agent = FinancialAnalystAgent(use_llm=bool(state.get("use_llm") and _has_key()))
+        answer = agent.answer(state.get("message", ""), scenario)
+    except Exception as exc:
+        answer = (
+            f"Couldn't compute the financial breakdown ({type(exc).__name__}). "
+            "Please try again or ask a different question."
+        )
+    return {
+        "answer": answer,
+        "sources": ["finance engine (IRR + NPV + IRPF brackets)"],
+    }
 
 
 def _regulatory_node(state: ChatState) -> dict:
@@ -410,6 +447,7 @@ def _graph():
 
     g = StateGraph(ChatState)
     g.add_node("route", _route_node)
+    g.add_node("financial", _financial_node)
     g.add_node("decision", _market_node)
     g.add_node("regulatory", _regulatory_node)
     g.add_node("comparables", _comparables_node)

@@ -19,7 +19,16 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 from airbnb_iip.agents.governance import apply_financial_guardrails
-from airbnb_iip.config import FINANCE, OCCUPANCY
+from airbnb_iip.config import (
+    AIRBNB_SETUP_COST_EUR_MIN,
+    BASURAS_EUR_BY_CITY,
+    BASURAS_EUR_DEFAULT,
+    FINANCE,
+    IRPF_BRACKETS,
+    NOI_GROWTH_RATE_DEFAULT,
+    OCCUPANCY,
+    PROPERTY_APPRECIATION_RATE_DEFAULT,
+)
 from airbnb_iip.data.occupancy import estimate_occupancy
 from airbnb_iip.models.price import get_city_price_predictor
 from airbnb_iip.models.sale import get_sale_predictor
@@ -29,7 +38,13 @@ from airbnb_iip.finance.costs import (
     compute_noi,
     tourist_tax_annual,
 )
-from airbnb_iip.finance.scenarios import break_even_horizon, monte_carlo, npv_sell
+from airbnb_iip.finance.scenarios import (
+    break_even_horizon,
+    irr_airbnb,
+    monte_carlo,
+    npv_airbnb,
+    npv_sell,
+)
 
 HOLDING_YEARS = 10
 
@@ -176,6 +191,18 @@ class Scenario:
     npv_airbnb_p50_eur: float = 0.0
     npv_sell_eur: float = 0.0
     p_airbnb_gt_sell: float = 0.0
+
+    # Extended financial metrics
+    irr_airbnb_pct: float | None = None          # IRR as a fraction (e.g. 0.082 = 8.2%)
+    npv_airbnb_pretax_p50_eur: float = 0.0       # NPV ignoring income tax
+    npv_sell_pretax_eur: float = 0.0             # sell proceeds before CGT
+    ibi_eur_used: float = 0.0                    # IBI actually applied
+    setup_cost_eur_used: float = 0.0             # setup cost actually applied
+
+    # IbiAgent provenance
+    ibi_method: str = "estimated"                # "cadastral" | "estimated" | "manual"
+    ibi_explanation: str = ""                    # one-sentence derivation from IbiAgent
+    basuras_eur_used: float = 0.0               # waste-tax amount applied
 
     monthly_seasonality: list[float] = field(default_factory=list)
     cost_breakdown: list[tuple[str, float]] = field(default_factory=list)
@@ -503,7 +530,19 @@ def predict_sale_value(prop: Property) -> tuple[float, float]:
 
 # ── Main scenario engine ──────────────────────────────────────────────────────
 
-def compute_scenario(prop: Property, *, managed: bool = True) -> Scenario:
+def compute_scenario(
+    prop: Property,
+    *,
+    managed: bool = True,
+    ibi_eur: float | None = None,
+    cadastral_value: float | None = None,
+    basuras_eur: float | None = None,
+    setup_cost_eur: float = AIRBNB_SETUP_COST_EUR_MIN,
+    noi_growth_rate: float = NOI_GROWTH_RATE_DEFAULT,
+    property_appreciation_rate: float = PROPERTY_APPRECIATION_RATE_DEFAULT,
+    include_income_tax: bool = True,
+    purchase_price: float | None = None,
+) -> Scenario:
     """Full Airbnb-vs-sell scenario for one property.
 
     1. LightGBM nightly price model.
@@ -516,6 +555,16 @@ def compute_scenario(prop: Property, *, managed: bool = True) -> Scenario:
     ``managed`` toggles professional management: when ``False`` (self-managed)
     the 20% management fee is dropped from every downstream figure — net
     revenue, P10/P90, payback, NPV, the recommendation and the cost breakdown.
+
+    ``ibi_eur``: annual IBI property tax. Defaults to city-specific estimate
+    from config if not provided. ``setup_cost_eur``: one-time Airbnb setup
+    cost (photography, staging, supplies). ``noi_growth_rate``: annual CPI/HPI
+    growth applied to NOI across the holding period. ``property_appreciation_rate``:
+    annual property price growth applied to the terminal sale value.
+    ``include_income_tax``: when False, income tax is excluded from NOI so the
+    caller can show the pre-tax comparison alongside the after-tax figure.
+    ``purchase_price``: used for CGT calculation on sale; defaults to 70% of
+    current sale value if not supplied.
     """
     import warnings
     warnings.filterwarnings("ignore")
@@ -532,7 +581,27 @@ def compute_scenario(prop: Property, *, managed: bool = True) -> Scenario:
 
     management_rate = FINANCE["management_pct"] if managed else 0.0
 
-    def _make_cost_kwargs(occ_nights: float) -> dict:
+    city_key = prop.city.strip().lower()
+
+    # IbiAgent: resolve IBI using the sourced municipal rate × cadastral value.
+    # Falls back to estimating cadastral value from market price when not given.
+    from airbnb_iip.agents.property_tax import IbiAgent
+    _ibi_agent = IbiAgent(use_llm=False)  # deterministic during scenario; narration is separate
+    ibi_estimate = _ibi_agent.resolve(
+        city_key,
+        market_value=sale_value,
+        cadastral_value=cadastral_value,
+        ibi_eur_override=ibi_eur,
+    )
+    ibi_resolved = ibi_estimate.ibi_eur
+
+    # Basuras (waste tax): city default unless the caller supplied an override
+    basuras_resolved = (
+        basuras_eur if basuras_eur is not None
+        else BASURAS_EUR_BY_CITY.get(city_key, BASURAS_EUR_DEFAULT)
+    )
+
+    def _make_cost_kwargs(occ_nights: float, *, with_tax: bool = True) -> dict:
         return dict(
             property_value=sale_value,
             cleaning_cost_eur=cleaning_cost_annual(
@@ -541,6 +610,10 @@ def compute_scenario(prop: Property, *, managed: bool = True) -> Scenario:
             ),
             tourist_tax_eur=tourist_tax_annual(occ_nights, city=prop.city),
             management_fee_rate=management_rate,
+            ibi_eur=ibi_resolved,
+            basuras_eur=basuras_resolved,
+            irpf_brackets=IRPF_BRACKETS if with_tax else None,
+            include_income_tax=with_tax and include_income_tax,
         )
 
     gross = annual_gross_revenue(nightly, annual_nights)
@@ -548,13 +621,30 @@ def compute_scenario(prop: Property, *, managed: bool = True) -> Scenario:
     noi = compute_noi(gross, **cost_kwargs)
     net_year = noi["noi"]
 
+    # Pre-tax cost kwargs (no income tax) for the pre-tax NPV comparison
+    cost_kwargs_pretax = _make_cost_kwargs(annual_nights, with_tax=False)
+
+    # CGT basis — use provided purchase price or estimate as 70% of current value
+    purchase_price_basis = purchase_price if purchase_price is not None else sale_value * 0.70
     sell = npv_sell(
         sale_price=sale_value,
-        purchase_price=sale_value * 0.70,
+        purchase_price=purchase_price_basis,
         purchase_costs=sale_value * 0.04,
         documented_improvements=sale_value * 0.02,
     )
     sell_net = sell["net_proceeds"]
+    # Pre-tax sell: sale price minus transaction costs only, no CGT
+    sell_pretax = sale_value * (1 - FINANCE["agent_commission_pct"] - FINANCE["notary_registry_pct"])
+
+    # Appreciated terminal value at end of holding period
+    terminal_price = sale_value * (1 + property_appreciation_rate) ** HOLDING_YEARS
+    terminal_sell = npv_sell(
+        sale_price=terminal_price,
+        purchase_price=purchase_price_basis,
+        purchase_costs=sale_value * 0.04,
+        documented_improvements=sale_value * 0.02,
+    )
+    terminal_value_net = terminal_sell["net_proceeds"]
 
     # Simple payback: how many years of net Airbnb income equals today's net
     # sale proceeds?  This is the metric investors intuitively understand.
@@ -577,10 +667,27 @@ def compute_scenario(prop: Property, *, managed: bool = True) -> Scenario:
         years=HOLDING_YEARS,
         npv_sell_value=sell_net,
         cost_kwargs=cost_kwargs,
-        terminal_value_net=sell_net,
+        terminal_value_net=terminal_value_net,
+        setup_cost=setup_cost_eur,
+        noi_growth_rate=noi_growth_rate,
         random_state=42,
         n_simulations=1500,
     )
+
+    # Pre-tax Monte Carlo (no income tax in NOI)
+    mc_pretax = monte_carlo(
+        price_hat=nightly,
+        occ_hat=annual_nights,
+        years=HOLDING_YEARS,
+        npv_sell_value=sell_pretax,
+        cost_kwargs=cost_kwargs_pretax,
+        terminal_value_net=terminal_value_net,
+        setup_cost=setup_cost_eur,
+        noi_growth_rate=noi_growth_rate,
+        random_state=42,
+        n_simulations=1500,
+    )
+
     p_airbnb = mc["p_airbnb_gt_sell"]
     if p_airbnb >= 0.60:
         rec, confidence = "airbnb", p_airbnb
@@ -589,10 +696,27 @@ def compute_scenario(prop: Property, *, managed: bool = True) -> Scenario:
     else:
         rec, confidence = "marginal", max(p_airbnb, 1.0 - p_airbnb)
 
+    # IRR on the after-tax NOI stream
+    noi_series = [
+        net_year * (1 + noi_growth_rate) ** t
+        for t in range(HOLDING_YEARS)
+    ]
+    # IRR uses the forgone sale proceeds as the "investment" (opportunity cost
+    # of not selling today) plus the Airbnb setup outlay. This gives the effective
+    # annualised return on the capital that would otherwise have been received
+    # from selling — the most meaningful metric for the hold-vs-sell decision.
+    irr_value = irr_airbnb(
+        noi_series,
+        setup_cost=sell_net + setup_cost_eur,
+        terminal_value_net=terminal_value_net,
+    )
+
     cost_lines = [
         ("Platform fee", noi["platform_fee"]),
         ("Cleaning", noi["cleaning_cost"]),
         ("Tourist tax", noi["tourist_tax"]),
+        ("IBI (property tax)", noi["ibi"]),
+        ("Waste tax (basuras)", noi["basuras"]),
         ("Management", noi["management_fee"]),
         ("Maintenance", noi["maintenance"]),
         ("Insurance", noi["insurance"]),
@@ -634,6 +758,14 @@ def compute_scenario(prop: Property, *, managed: bool = True) -> Scenario:
         npv_airbnb_p50_eur=round(mc["p50"], 0),
         npv_sell_eur=round(sell_net, 0),
         p_airbnb_gt_sell=round(p_airbnb, 3),
+        irr_airbnb_pct=round(irr_value, 4) if irr_value is not None else None,
+        npv_airbnb_pretax_p50_eur=round(mc_pretax["p50"], 0),
+        npv_sell_pretax_eur=round(sell_pretax, 0),
+        ibi_eur_used=round(ibi_resolved, 0),
+        ibi_method=ibi_estimate.method,
+        ibi_explanation=ibi_estimate.explanation,
+        basuras_eur_used=round(basuras_resolved, 0),
+        setup_cost_eur_used=round(setup_cost_eur, 0),
         monthly_seasonality=seasonality,
         cost_breakdown=costs,
         feature_drivers=drivers,

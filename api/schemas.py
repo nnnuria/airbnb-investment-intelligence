@@ -236,6 +236,16 @@ class ScenarioRequest(BaseModel):
     nickname: Optional[str] = None
     notes: Optional[str] = None
 
+    # Financial assumption overrides (all optional; engine uses city defaults when omitted)
+    ibi_eur: Optional[float] = Field(default=None, ge=0, description="Annual IBI property tax (€). Overrides IbiAgent estimate when provided.")
+    cadastral_value: Optional[float] = Field(default=None, ge=0, description="Cadastral value (valor catastral) for exact IBI computation. IbiAgent estimates it from market price when omitted.")
+    basuras_eur: Optional[float] = Field(default=None, ge=0, description="Annual waste tax (basuras/TGR). Defaults to city value when omitted.")
+    setup_cost_eur: float = Field(default=1500.0, ge=0, description="One-time Airbnb setup cost (photos, staging, supplies).")
+    noi_growth_rate: float = Field(default=0.025, ge=0, le=0.15, description="Annual NOI growth rate (CPI/HPI blend).")
+    property_appreciation_rate: float = Field(default=0.03, ge=0, le=0.20, description="Annual property price appreciation rate.")
+    include_income_tax: bool = Field(default=True, description="Whether to deduct income tax from NOI. False shows pre-tax comparison.")
+    purchase_price: Optional[float] = Field(default=None, ge=0, description="Original purchase price for CGT calculation. Defaults to 70% of current value.")
+
 
 class ScenarioResponse(BaseModel):
     """Full decision-engine output. Mirrors ``engine.Scenario`` field-for-field
@@ -260,6 +270,16 @@ class ScenarioResponse(BaseModel):
     npv_airbnb_p50_eur: float = 0.0
     npv_sell_eur: float = 0.0
     p_airbnb_gt_sell: float = 0.0
+
+    # Extended financial metrics
+    irr_airbnb_pct: Optional[float] = None
+    npv_airbnb_pretax_p50_eur: float = 0.0
+    npv_sell_pretax_eur: float = 0.0
+    ibi_eur_used: float = 0.0
+    ibi_method: str = "estimated"
+    ibi_explanation: str = ""
+    basuras_eur_used: float = 0.0
+    setup_cost_eur_used: float = 0.0
 
     monthly_seasonality: list[float] = Field(default_factory=list)
     # (label, eur) cost lines and (label, fraction) SHAP drivers; tuples
