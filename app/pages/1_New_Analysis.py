@@ -233,7 +233,9 @@ if submitted:
     # The decision engine now runs behind the FastAPI /scenario endpoint; the
     # app is a thin client of it (one source of truth, no in-process model load).
     try:
-        st.session_state["scenario"] = get_scenario(prop)
+        st.session_state["scenario"] = get_scenario(
+            prop, managed=st.session_state.get("managed_toggle", True)
+        )
         st.session_state.pop("api_error", None)
     except APIError as exc:
         st.session_state["scenario"] = None
@@ -250,6 +252,22 @@ if submitted:
             st.session_state["regulatory"] = apply_regulatory_guardrails(reg_raw)
         except Exception as exc:
             st.session_state["regulatory"] = {"error": str(exc)}
+
+def _recompute_scenario() -> None:
+    """Re-run the scenario when the management-mode switch flips, reusing the
+    stored property so the user doesn't have to click 'Run analysis' again."""
+    stored = st.session_state.get("property")
+    if stored is None:
+        return
+    try:
+        st.session_state["scenario"] = get_scenario(
+            stored, managed=st.session_state.get("managed_toggle", True)
+        )
+        st.session_state.pop("api_error", None)
+    except APIError as exc:
+        st.session_state["scenario"] = None
+        st.session_state["api_error"] = str(exc)
+
 
 prop = st.session_state.get("property")
 scen = st.session_state.get("scenario")
@@ -297,6 +315,22 @@ if scen and prop:
         """,
         unsafe_allow_html=True,
     )
+
+    # ── Management mode switch ───────────────────────────────────────────────
+    # Toggles the 20% management fee across revenue, costs, payback and the
+    # recommendation. Flipping it recomputes the scenario for the same property.
+    _, sw_toggle = st.columns([3, 1.15], gap="medium")
+    with sw_toggle:
+        st.toggle(
+            "Professionally managed",
+            value=True,
+            key="managed_toggle",
+            on_change=_recompute_scenario,
+            help=(
+                "On — a property manager runs the listing (−20% of gross revenue "
+                "in management fees). Off — you self-manage and keep that fee."
+            ),
+        )
 
     # ── Governance banner ────────────────────────────────────────────────────
     gov = scen.governance or {}
@@ -361,28 +395,32 @@ if scen and prop:
             "Indicative P10 / median / P90 net profit after all costs. Uncertainty is "
             "dominated by occupancy variability."
         )
+        _bars = [scen.net_revenue_p10_eur,
+                 scen.net_revenue_year_eur,
+                 scen.net_revenue_p90_eur]
+        # Headroom above the tallest bar (and below 0 if any band is negative)
+        # so the "outside" value labels render fully instead of being clipped.
+        _ymax, _ymin = max(_bars), min(0, min(_bars))
+        _headroom = (_ymax - _ymin) * 0.18 or 1.0
         fig = go.Figure(
             go.Bar(
                 x=["P10", "Median", "P90"],
-                y=[scen.net_revenue_p10_eur,
-                   scen.net_revenue_year_eur,
-                   scen.net_revenue_p90_eur],
+                y=_bars,
                 marker_color=[KPMG_BLUE_TINT, KPMG_BLUE, KPMG_BLUE_DARK],
-                text=[f"€{v:,.0f}" for v in (
-                    scen.net_revenue_p10_eur,
-                    scen.net_revenue_year_eur,
-                    scen.net_revenue_p90_eur,
-                )],
+                text=[f"€{v:,.0f}" for v in _bars],
                 textposition="outside",
+                cliponaxis=False,
             )
         )
         fig.update_layout(
             height=320,
-            margin=dict(l=10, r=10, t=20, b=20),
+            margin=dict(l=10, r=10, t=40, b=20),
             plot_bgcolor=WHITE, paper_bgcolor=WHITE,
-            yaxis=dict(showgrid=True, gridcolor=BORDER_SUBTLE, zeroline=False),
+            yaxis=dict(showgrid=True, gridcolor=BORDER_SUBTLE, zeroline=False,
+                       range=[_ymin, _ymax + _headroom]),
             xaxis=dict(showgrid=False),
             showlegend=False,
+            uniformtext=dict(minsize=10, mode="show"),
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 

@@ -7,6 +7,8 @@ revenue gap, and Apriori-style association rules as the "why".
 
 from __future__ import annotations
 
+import re
+
 import streamlit as st
 
 from components.api_client import APIError
@@ -31,9 +33,9 @@ apply_page_style("Optimisation")
 hero(
     eyebrow="Step 04",
     title="Optimisation",
-    lede="If you go the Airbnb route, here are improvements ranked by "
-         "payback period. Each estimates investment, annual revenue uplift, "
-         "and how confident the recommendation is.",
+    lede="If you go the Airbnb route, here are improvements ranked by expected "
+         "return. Toggle the ones you'd actually make and enter your own "
+         "investment for each — the summary updates to match.",
 )
 
 scen = st.session_state.get("scenario")
@@ -80,13 +82,29 @@ spec = {
     "has_parking": prop.has_parking,
     "has_workspace": prop.has_workspace,
 }
-try:
-    plan = api_optimise(spec, projected_annual_nights=scen.nights_booked_year)
-    recommendations = plan.recommendations
-except APIError as exc:  # pragma: no cover - defensive UI guard
-    st.warning(f"Optimisation data is unavailable right now ({exc}).")
+# Cache the plan per property so the per-row toggles and investment inputs below
+# don't re-hit /optimise on every Streamlit rerun (it's deterministic per spec).
+_opt_sig = (tuple(sorted(spec.items())), scen.nights_booked_year)
+if st.session_state.get("_opt_sig") != _opt_sig:
+    try:
+        st.session_state["_opt_plan"] = api_optimise(
+            spec, projected_annual_nights=scen.nights_booked_year
+        )
+        st.session_state["_opt_sig"] = _opt_sig
+        st.session_state.pop("_opt_error", None)
+    except APIError as exc:  # pragma: no cover - defensive UI guard
+        st.session_state["_opt_error"] = str(exc)
+        st.session_state.pop("_opt_plan", None)
+
+if st.session_state.get("_opt_error"):
+    st.warning(
+        f"Optimisation data is unavailable right now ({st.session_state['_opt_error']})."
+    )
     footer_disclaimer(DISCLAIMER)
     st.stop()
+
+plan = st.session_state["_opt_plan"]
+recommendations = plan.recommendations
 
 # ── Peer-group revenue gap (feature-gap framing) ──────────────────────────────
 if plan.peer_n:
@@ -123,80 +141,110 @@ if not recommendations:
 
 method_label = {"counterfactual": "model counterfactual", "residual": "market residual"}
 
-# ── Ranked list of improvements ──────────────────────────────────────────────
+
+def _row_key(name: str) -> str:
+    """Stable widget key from an improvement name (per property)."""
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+
+
+st.markdown("##### Choose improvements & enter your costs")
+st.caption(
+    "Toggle the improvements you'd actually make, then enter your own investment "
+    "for each. The summary at the bottom reflects only what's switched on."
+)
+
+# ── Interactive list of improvements ─────────────────────────────────────────
+# (included, investment, annual_uplift) per row → drives the totals below.
+row_state: list[tuple[bool, float, float]] = []
 for idx, imp in enumerate(recommendations, start=1):
     confidence_color = {
         "high": SUCCESS, "medium": KPMG_BLUE, "low": WARNING,
     }[imp.confidence]
-    payback_color = SUCCESS if imp.payback_months <= 12 else \
-                    KPMG_BLUE if imp.payback_months <= 24 else WARNING
     lift_chip = (
         f'<span style="margin-left: 0.4rem; color: {TEXT_MUTED}; font-size: 0.72rem;">'
         f'lift {imp.lift:.2f}×</span>'
         if imp.lift else ""
     )
+    key = _row_key(imp.name)
 
-    st.markdown(
-        f"""
-        <div style="padding: 1.5rem 1.75rem; border: 1px solid {BORDER_SUBTLE};
-                    background: {WHITE}; border-radius: 14px; margin-bottom: 1rem;">
-          <div style="display: flex; justify-content: space-between;
-                      gap: 1.5rem; align-items: flex-start;">
-            <div style="flex: 1;">
-              <div style="display: flex; gap: 0.6rem; align-items: center;
-                          margin-bottom: 0.5rem;">
-                <span style="color: {KPMG_BLUE}; font-weight: 700;
-                             font-size: 0.85rem;">#{idx:02d}</span>
-                <span style="padding: 0.18rem 0.55rem;
-                             background: {confidence_color}; color: {WHITE};
-                             font-size: 0.68rem; font-weight: 600;
-                             letter-spacing: 0.04em; border-radius: 999px;
-                             text-transform: uppercase;">
-                  {imp.confidence} confidence
-                </span>
-                <span style="color: {TEXT_MUTED}; font-size: 0.72rem;">
-                  {method_label.get(imp.method, imp.method)}</span>
-                {lift_chip}
-              </div>
-              <div style="font-size: 1.15rem; font-weight: 700;
-                          margin-bottom: 0.35rem; color: {KPMG_BLUE_DARK};">
-                {imp.name}
-              </div>
-              <div style="color: {TEXT_SECONDARY}; font-size: 0.92rem;
-                          line-height: 1.55;">
-                {imp.rationale}
-              </div>
-            </div>
-            <div style="min-width: 220px; text-align: right;">
-              <div style="font-size: 0.72rem; color: {TEXT_MUTED};
-                          font-weight: 600; letter-spacing: 0.08em;
-                          text-transform: uppercase; margin-bottom: 0.2rem;">
-                Annual uplift
-              </div>
-              <div style="font-size: 1.5rem; font-weight: 700; color: {SUCCESS};">
-                +€{imp.annual_uplift_eur:,.0f}
-              </div>
-              <div style="margin-top: 0.6rem; color: {TEXT_SECONDARY};
-                          font-size: 0.88rem;">
-                Investment <b>€{imp.investment_eur:,.0f}</b>
-              </div>
-              <div style="margin-top: 0.2rem; color: {payback_color};
-                          font-size: 0.92rem; font-weight: 600;">
-                Payback {imp.payback_months:.0f} months
-              </div>
-            </div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    with st.container(border=True):
+        tog_col, body_col, inv_col = st.columns(
+            [0.7, 3, 1.7], gap="medium", vertical_alignment="center",
+        )
+        with tog_col:
+            included = st.toggle(
+                "Include this improvement",
+                value=True,
+                key=f"opt_on_{key}",
+                label_visibility="collapsed",
+            )
+        with body_col:
+            name_color = KPMG_BLUE_DARK if included else TEXT_MUTED
+            st.markdown(
+                f"""
+                <div style="display: flex; gap: 0.6rem; align-items: center;
+                            margin-bottom: 0.4rem; flex-wrap: wrap;">
+                  <span style="color: {KPMG_BLUE}; font-weight: 700;
+                               font-size: 0.85rem;">#{idx:02d}</span>
+                  <span style="padding: 0.18rem 0.55rem;
+                               background: {confidence_color}; color: {WHITE};
+                               font-size: 0.68rem; font-weight: 600;
+                               letter-spacing: 0.04em; border-radius: 999px;
+                               text-transform: uppercase;">
+                    {imp.confidence} confidence</span>
+                  <span style="color: {TEXT_MUTED}; font-size: 0.72rem;">
+                    {method_label.get(imp.method, imp.method)}</span>
+                  {lift_chip}
+                </div>
+                <div style="font-size: 1.15rem; font-weight: 700;
+                            margin-bottom: 0.35rem; color: {name_color};">
+                  {imp.name}</div>
+                <div style="color: {TEXT_SECONDARY}; font-size: 0.92rem;
+                            line-height: 1.55;">{imp.rationale}</div>
+                """,
+                unsafe_allow_html=True,
+            )
+        with inv_col:
+            st.markdown(
+                f"""
+                <div style="font-size: 0.72rem; color: {TEXT_MUTED};
+                            font-weight: 600; letter-spacing: 0.08em;
+                            text-transform: uppercase;">Annual uplift</div>
+                <div style="font-size: 1.4rem; font-weight: 700; color: {SUCCESS};
+                            margin-bottom: 0.35rem;">+€{imp.annual_uplift_eur:,.0f}</div>
+                """,
+                unsafe_allow_html=True,
+            )
+            investment = st.number_input(
+                "Your investment (€)",
+                min_value=0.0, value=0.0, step=50.0,
+                key=f"opt_inv_{key}", format="%.0f",
+                disabled=not included,
+            )
+            if included and investment > 0 and imp.annual_uplift_eur > 0:
+                pm = investment / imp.annual_uplift_eur * 12
+                pcolor = SUCCESS if pm <= 12 else KPMG_BLUE if pm <= 24 else WARNING
+                st.markdown(
+                    f"<div style='color: {pcolor}; font-size: 0.9rem; "
+                    f"font-weight: 600;'>Payback {pm:.0f} months</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.caption("Enter an investment for payback")
 
-# ── Totals ───────────────────────────────────────────────────────────────────
-total_uplift = sum(i.annual_uplift_eur for i in recommendations)
-total_invest = sum(i.investment_eur for i in recommendations)
+    row_state.append((included, investment, imp.annual_uplift_eur))
+
+# ── Totals (only toggled-on rows, with the user's investment figures) ─────────
+selected = [(inv, up) for on, inv, up in row_state if on]
+total_uplift = sum(up for _, up in selected)
+total_invest = sum(inv for inv, _ in selected)
+combined_payback_str = (
+    f"{total_invest / total_uplift * 12:.0f} months"
+    if total_uplift > 0 and total_invest > 0 else "—"
+)
 
 st.write("")
-st.markdown("### If you implemented everything")
+st.markdown(f"### Your selection — {len(selected)} of {len(row_state)} improvements")
 t1, t2, t3 = st.columns(3, gap="medium")
 with t1:
     st.markdown(f"""
@@ -220,7 +268,6 @@ with t2:
         €{total_invest:,.0f}</div>
     </div>""", unsafe_allow_html=True)
 with t3:
-    combined_payback = (total_invest / total_uplift * 12) if total_uplift > 0 else 0
     st.markdown(f"""
     <div style="padding: 1.5rem; border: 1px solid {BORDER_SUBTLE};
                 background: {WHITE}; border-radius: 14px;">
@@ -228,7 +275,7 @@ with t3:
                   letter-spacing: 0.08em; text-transform: uppercase;
                   margin-bottom: 0.4rem;">Combined payback</div>
       <div style="font-size: 1.85rem; font-weight: 700;">
-        {combined_payback:.0f} months</div>
+        {combined_payback_str}</div>
     </div>""", unsafe_allow_html=True)
 
 st.caption(

@@ -503,7 +503,7 @@ def predict_sale_value(prop: Property) -> tuple[float, float]:
 
 # ── Main scenario engine ──────────────────────────────────────────────────────
 
-def compute_scenario(prop: Property) -> Scenario:
+def compute_scenario(prop: Property, *, managed: bool = True) -> Scenario:
     """Full Airbnb-vs-sell scenario for one property.
 
     1. LightGBM nightly price model.
@@ -512,6 +512,10 @@ def compute_scenario(prop: Property) -> Scenario:
     4. LightGBM sale price model.
     5. Break-even horizon and Monte Carlo recommendation.
     6. Real SHAP feature contributions for the explanation chart.
+
+    ``managed`` toggles professional management: when ``False`` (self-managed)
+    the 20% management fee is dropped from every downstream figure — net
+    revenue, P10/P90, payback, NPV, the recommendation and the cost breakdown.
     """
     import warnings
     warnings.filterwarnings("ignore")
@@ -526,6 +530,8 @@ def compute_scenario(prop: Property) -> Scenario:
 
     sale_value, sale_per_m2 = predict_sale_value(prop)
 
+    management_rate = FINANCE["management_pct"] if managed else 0.0
+
     def _make_cost_kwargs(occ_nights: float) -> dict:
         return dict(
             property_value=sale_value,
@@ -534,7 +540,7 @@ def compute_scenario(prop: Property) -> Scenario:
                 avg_length_of_stay=OCCUPANCY["avg_length_of_stay"],
             ),
             tourist_tax_eur=tourist_tax_annual(occ_nights, city=prop.city),
-            management_fee_rate=FINANCE["management_pct"],
+            management_fee_rate=management_rate,
         )
 
     gross = annual_gross_revenue(nightly, annual_nights)

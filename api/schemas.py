@@ -222,6 +222,10 @@ class ScenarioRequest(BaseModel):
     accommodates: int = Field(ge=1, examples=[4])
     room_type: str = Field(default="Entire home/apt", examples=["Entire home/apt"])
 
+    # Decision option (not a Property field; the router pulls it out separately).
+    # True = professionally managed; False = self-managed (drops the mgmt fee).
+    managed: bool = Field(default=True, examples=[True])
+
     has_balcony: bool = False
     has_ac: bool = False
     has_elevator: bool = False

@@ -57,15 +57,20 @@ def _to_scenario(data: dict) -> Scenario:
     return Scenario(**clean)
 
 
-def get_scenario(prop: Property, *, base_url: str | None = None) -> Scenario:
+def get_scenario(
+    prop: Property, *, managed: bool = True, base_url: str | None = None
+) -> Scenario:
     """POST a property to ``/scenario`` and return the full Scenario.
+
+    ``managed`` selects professional management (``True``) vs self-managed
+    (``False``, which drops the 20% management fee from the decision).
 
     Raises :class:`APIError` (with a friendly message) if the API is down or
     responds with an error, so the caller can surface it cleanly.
     """
     client = httpx.Client(base_url=base_url, timeout=_TIMEOUT) if base_url else _client()
     try:
-        resp = client.post("/scenario", json=asdict(prop))
+        resp = client.post("/scenario", json={**asdict(prop), "managed": managed})
         resp.raise_for_status()
     except httpx.ConnectError as exc:
         raise APIError(
