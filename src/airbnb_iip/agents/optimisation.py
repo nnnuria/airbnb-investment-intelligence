@@ -310,24 +310,34 @@ class OptimisationService:
         return base, {}
 
     def _estimate_nights(self, peer) -> float:
-        """Annual nights from the peer's median review velocity via the SF model.
+        """Annual nights from the calendar-based LightGBM occupancy model.
 
-        Restricted to well-operated comparables (``reviews_per_month >= 1.5``) so
-        the fallback matches the occupancy basis the decision engine uses
-        (``engine.reviews_per_month_from_data``); otherwise a standalone API call
-        would under-estimate nights — and therefore uplift — versus the UI.
+        Builds a peer-representative property (modal city / district / room-type,
+        median nightly price) and predicts occupancy with the production
+        occupancy model, so a standalone /optimise call uses the same occupancy
+        basis as the decision engine instead of the retired SF estimator. Only a
+        fallback — the UI passes ``projected_annual_nights`` from the scenario.
         """
         try:
-            from airbnb_iip.data.occupancy import estimate_occupancy
-            well_run = peer.loc[peer["reviews_per_month"] >= 1.5, "reviews_per_month"]
-            rpm = float(well_run.median()) if len(well_run) >= _MIN_GROUP \
-                else float(peer["reviews_per_month"].median())
-            if rpm != rpm:  # NaN (empty peer group)
-                rpm = 1.5
-            occ = estimate_occupancy(rpm)
-            return occ["nights_booked_per_month"] * 12
+            from airbnb_iip.models.occupancy import get_occupancy_predictor
+
+            if len(peer) == 0:
+                return 0.40 * 365
+
+            def _mode(col):
+                m = peer[col].dropna().mode()
+                return m.iloc[0] if len(m) else None
+
+            spec = {
+                "city": _mode("city"),
+                "neighbourhood_cleansed": _mode("neighbourhood_cleansed"),
+                "room_type": _mode("room_type"),
+                "price": float(peer["price"].median()),
+            }
+            rate = get_occupancy_predictor().predict(spec)
+            return rate * 365
         except Exception:
-            return 0.55 * 365
+            return 0.40 * 365
 
     @staticmethod
     def _confidence(method: str, lift: float | None) -> Literal["high", "medium", "low"]:

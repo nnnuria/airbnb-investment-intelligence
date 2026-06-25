@@ -220,8 +220,8 @@ def _deterministic_decision_answer(question: str, facts: dict) -> str:
     if any(k in m for k in ("occupancy", "booked", "nights")):
         return (
             f"Projected occupancy is {s['occupancy_rate_annual'] * 100:.0f}% "
-            f"({s['nights_booked_year']} nights/year), inferred from the review velocity "
-            f"of comparable well-operated listings."
+            f"({s['nights_booked_year']} nights/year), from a LightGBM model trained on "
+            f"Inside Airbnb calendar availability (booked nights) for comparable listings."
         )
     if any(k in m for k in ("price", "nightly", "rate")):
         return (

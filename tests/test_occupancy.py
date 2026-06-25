@@ -1,208 +1,87 @@
-"""Tests for the San Francisco occupancy estimator."""
-import math
+"""Tests for the calendar-based occupancy helpers.
 
+The legacy San Francisco review-based estimator has been retired; occupancy is
+now (a) a target computed from Inside Airbnb calendar availability and (b) a
+learned LightGBM model (see tests/test_occupancy_model.py). These tests cover
+the lightweight calendar helpers in airbnb_iip.data.occupancy.
+"""
 import pandas as pd
 import pytest
 
-from airbnb_iip.config import OCCUPANCY
 from airbnb_iip.data.occupancy import (
-    DAYS_PER_MONTH,
+    BOOKED_FLAG,
     DAYS_PER_YEAR,
-    MONTHS_PER_YEAR,
-    estimate_occupancy,
-    estimate_occupancy_l365d,
+    occupancy_l365d_from_availability,
+    occupancy_rate_from_calendar,
 )
 
 
-# ── Scalar form ───────────────────────────────────────────────────────────────
+# ── occupancy_rate_from_calendar ──────────────────────────────────────────────
 
-def test_estimate_occupancy_known_value():
-    # reviews_per_month=1.0 with defaults (review_rate=0.50, los=3):
-    # nights_per_month = (1 / 0.50) * 3 = 6
-    # occupancy_rate   = 6 / 30 = 0.2
-    out = estimate_occupancy(1.0)
-    assert out["nights_booked_per_month"] == pytest.approx(6.0)
-    assert out["occupancy_rate"] == pytest.approx(0.2)
-
-
-def test_estimate_occupancy_defaults_come_from_config():
-    # Recompute with the config dict directly — must match.
-    out = estimate_occupancy(
-        2.0,
-        review_rate=OCCUPANCY["review_rate"],
-        avg_length_of_stay=OCCUPANCY["avg_length_of_stay"],
-        max_occupancy=OCCUPANCY["max_occupancy"],
-    )
-    default_out = estimate_occupancy(2.0)
-    assert out == default_out
+def _calendar():
+    # listing 1: 3 booked of 4 nights → 0.75; listing 2: 0 of 2 → 0.0
+    return pd.DataFrame({
+        "listing_id": [1, 1, 1, 1, 2, 2],
+        "date": ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04",
+                 "2026-01-01", "2026-01-02"],
+        "available": ["f", "f", "f", "t", "t", "t"],
+    })
 
 
-def test_estimate_occupancy_caps_at_max_occupancy():
-    # reviews_per_month=10 with defaults would give (10/0.50)*3 = 60 nights
-    # in a 30-day month, which is impossible. Cap = 0.70 * 30 = 21.
-    out = estimate_occupancy(10.0)
-    assert out["nights_booked_per_month"] == pytest.approx(21.0)
-    assert out["occupancy_rate"] == pytest.approx(0.7)
+def test_occupancy_rate_basic():
+    out = occupancy_rate_from_calendar(_calendar())
+    out = out.set_index("listing_id")
+    assert out.loc[1, "occupancy_rate"] == pytest.approx(0.75)
+    assert out.loc[2, "occupancy_rate"] == pytest.approx(0.0)
+    assert out.loc[1, "calendar_days"] == 4
+    assert out.loc[1, "occupancy_nights_l365d"] == round(0.75 * DAYS_PER_YEAR)
 
 
-def test_estimate_occupancy_zero_reviews_returns_zero():
-    out = estimate_occupancy(0.0)
-    assert out["nights_booked_per_month"] == 0.0
-    assert out["occupancy_rate"] == 0.0
+def test_occupancy_rate_f_is_booked():
+    # Sanity: 'f' (not available) is the booked flag, 't' is free.
+    assert BOOKED_FLAG == "f"
+    df = pd.DataFrame({"listing_id": [9, 9], "available": ["f", "f"]})
+    out = occupancy_rate_from_calendar(df)
+    assert out.loc[0, "occupancy_rate"] == pytest.approx(1.0)
 
 
-@pytest.mark.parametrize("value", [None, float("nan")])
-def test_estimate_occupancy_none_or_nan_treated_as_zero(value):
-    out = estimate_occupancy(value)
-    assert out["nights_booked_per_month"] == 0.0
-    assert out["occupancy_rate"] == 0.0
+def test_occupancy_rate_handles_whitespace_and_custom_cols():
+    df = pd.DataFrame({"lid": [1, 1], "avail": [" f ", "t"]})
+    out = occupancy_rate_from_calendar(df, id_col="lid", available_col="avail")
+    assert out.loc[0, "occupancy_rate"] == pytest.approx(0.5)
 
 
-def test_estimate_occupancy_negative_reviews_clamped_to_zero():
-    out = estimate_occupancy(-5.0)
-    assert out["nights_booked_per_month"] == 0.0
-    assert out["occupancy_rate"] == 0.0
+def test_occupancy_rate_missing_column_raises():
+    with pytest.raises(KeyError):
+        occupancy_rate_from_calendar(pd.DataFrame({"listing_id": [1]}))
 
 
-def test_estimate_occupancy_respects_custom_review_rate():
-    # review_rate=1.0 → every guest reviews → fewer inferred stays
-    # nights/month = (4 / 1.0) * 3 = 12
-    out = estimate_occupancy(4.0, review_rate=1.0)
-    assert out["nights_booked_per_month"] == pytest.approx(12.0)
+# ── occupancy_l365d_from_availability ────────────────────────────────────────
 
-
-def test_estimate_occupancy_respects_custom_length_of_stay():
-    # los=5 → (1/0.50)*5 = 10 nights/month (below the 21-night cap)
-    out = estimate_occupancy(1.0, avg_length_of_stay=5)
-    assert out["nights_booked_per_month"] == pytest.approx(10.0)
-
-
-def test_estimate_occupancy_respects_custom_cap():
-    # Tight 50% cap: max 15 nights/month even at high review activity
-    out = estimate_occupancy(100.0, max_occupancy=0.5)
-    assert out["nights_booked_per_month"] == pytest.approx(15.0)
-    assert out["occupancy_rate"] == pytest.approx(0.5)
-
-
-@pytest.mark.parametrize(
-    "kwargs",
-    [
-        {"review_rate": 0.0},
-        {"review_rate": -0.1},
-        {"review_rate": 1.1},
-        {"avg_length_of_stay": 0.0},
-        {"avg_length_of_stay": -1},
-        {"max_occupancy": 0.0},
-        {"max_occupancy": 1.5},
-    ],
-)
-def test_estimate_occupancy_rejects_invalid_assumptions(kwargs):
-    with pytest.raises(ValueError):
-        estimate_occupancy(1.0, **kwargs)
-
-
-def test_estimate_occupancy_rejects_non_numeric_reviews():
-    with pytest.raises(ValueError, match="reviews_per_month"):
-        estimate_occupancy("not-a-number")
-
-
-# ── Vectorised form ───────────────────────────────────────────────────────────
-
-def test_estimate_occupancy_l365d_returns_named_int_series():
-    df = pd.DataFrame({"number_of_reviews_ltm": [0.0, 1.0, 2.0]})
-    s = estimate_occupancy_l365d(df)
-    assert isinstance(s, pd.Series)
+def test_l365d_from_availability_complement():
+    df = pd.DataFrame({"availability_365": [0, 110, 365]})
+    s = occupancy_l365d_from_availability(df)
     assert s.name == "estimated_occupancy_l365d"
     assert s.dtype == "int64"
-    assert len(s) == 3
+    assert s.tolist() == [365, 255, 0]
 
 
-def test_estimate_occupancy_l365d_matches_inside_airbnb_convention():
-    # Input is last-12-months review count (already annual — no ×12 needed).
-    # nights/year = (reviews_ltm / review_rate) * los
-    # reviews_ltm=1 → (1/0.50)*3 = 6 nights/year
-    df = pd.DataFrame({"number_of_reviews_ltm": [1.0]})
-    s = estimate_occupancy_l365d(df)
-    assert s.iloc[0] == 6
+def test_l365d_from_availability_nan_and_clip():
+    df = pd.DataFrame({"availability_365": [float("nan"), -5, 400]})
+    s = occupancy_l365d_from_availability(df)
+    # NaN → fully available → 0 booked; negatives/over-365 clamped.
+    assert s.tolist() == [0, 365, 0]
 
 
-def test_estimate_occupancy_l365d_caps_at_255_with_defaults():
-    # floor(0.70 * 365) = 255 — matches the Inside Airbnb upper bound.
-    # Cap triggers at reviews_ltm = 255 * 0.50 / 3 = 42.5, so use 50.
-    df = pd.DataFrame({"number_of_reviews_ltm": [50.0]})
-    s = estimate_occupancy_l365d(df)
-    assert s.iloc[0] == 255
-
-
-def test_estimate_occupancy_l365d_handles_nan_and_negative():
+def test_l365d_from_availability_preserves_index():
     df = pd.DataFrame(
-        {"number_of_reviews_ltm": [float("nan"), -1.0, 0.0, 1.0]}
-    )
-    s = estimate_occupancy_l365d(df)
-    assert s.tolist() == [0, 0, 0, 6]
-
-
-def test_estimate_occupancy_l365d_preserves_index():
-    df = pd.DataFrame(
-        {"number_of_reviews_ltm": [1.0, 2.0]},
+        {"availability_365": [100, 200]},
         index=pd.Index(["a", "b"], name="listing_id"),
     )
-    s = estimate_occupancy_l365d(df)
+    s = occupancy_l365d_from_availability(df)
     assert s.index.tolist() == ["a", "b"]
-    assert s.index.name == "listing_id"
 
 
-def test_estimate_occupancy_l365d_accepts_custom_column_name():
-    df = pd.DataFrame({"my_reviews_col": [1.0, 2.0]})
-    s = estimate_occupancy_l365d(df, reviews_ltm_col="my_reviews_col")
-    assert s.tolist() == [6, 12]
-
-
-def test_estimate_occupancy_l365d_missing_column_raises():
-    df = pd.DataFrame({"price": [100.0]})
-    with pytest.raises(KeyError, match="number_of_reviews_ltm"):
-        estimate_occupancy_l365d(df)
-
-
-def test_estimate_occupancy_l365d_respects_custom_assumptions():
-    df = pd.DataFrame({"number_of_reviews_ltm": [1.0]})
-    # review_rate=1.0, los=4 → (1/1.0)*4 = 4 nights/year
-    s = estimate_occupancy_l365d(df, review_rate=1.0, avg_length_of_stay=4)
-    assert s.iloc[0] == 4
-
-
-def test_estimate_occupancy_l365d_coerces_string_numbers():
-    # Defensive: if a column comes in as object dtype with numeric strings,
-    # we should coerce rather than crash.
-    df = pd.DataFrame({"number_of_reviews_ltm": ["1.0", "2.0", "garbage"]})
-    s = estimate_occupancy_l365d(df)
-    assert s.tolist() == [6, 12, 0]
-
-
-# ── Cross-check: scalar × 12 lines up with l365d when ltm = rpm × 12 ─────────
-
-def test_scalar_x12_consistent_with_l365d_below_cap():
-    # l365d takes last-12-months review count; scalar takes reviews/month.
-    # Relationship: l365d(ltm) == scalar(rpm) × 12  when  ltm == rpm × 12.
-    rpm_values = [0.5, 1.0, 2.0, 3.0]
-    ltm_values = [r * MONTHS_PER_YEAR for r in rpm_values]
-    df = pd.DataFrame({"number_of_reviews_ltm": ltm_values})
-    vector = estimate_occupancy_l365d(df).tolist()
-    scalar = [
-        int(round(estimate_occupancy(r)["nights_booked_per_month"] * MONTHS_PER_YEAR))
-        for r in rpm_values
-    ]
-    annual_cap = math.floor(OCCUPANCY["max_occupancy"] * DAYS_PER_YEAR)
-    monthly_cap = OCCUPANCY["max_occupancy"] * DAYS_PER_MONTH
-    for rpm, ltm, v, s in zip(rpm_values, ltm_values, vector, scalar):
-        nights_month = (rpm / OCCUPANCY["review_rate"]) * OCCUPANCY["avg_length_of_stay"]
-        if nights_month <= monthly_cap and v < annual_cap:
-            assert v == s, f"mismatch at rpm={rpm}: vector={v} scalar={s}"
-
-
-# ── Constants sanity ──────────────────────────────────────────────────────────
-
-def test_constants_match_calendar_assumptions():
-    assert DAYS_PER_YEAR == 365
-    assert MONTHS_PER_YEAR == 12
-    assert DAYS_PER_MONTH == 30
+def test_l365d_from_availability_missing_column_raises():
+    with pytest.raises(KeyError, match="availability_365"):
+        occupancy_l365d_from_availability(pd.DataFrame({"price": [100.0]}))

@@ -54,9 +54,9 @@ City-specific outliers removed during EDA: implausible records such as `beds = 4
 
 ---
 
-## 4. Occupancy & demand (review-derived)
+## 4. Occupancy & demand (calendar-derived)
 
-Because Inside Airbnb's calendar carries no prices (§6), occupancy is inferred from **review velocity** (the San Francisco model — see `FEATURE_ENGINEERING.md §5`). EDA-level demand indicators:
+Occupancy is measured directly from Inside Airbnb's **calendar** — a night with `available == 'f'` is treated as booked — and a LightGBM model learns it from listing features (see `FEATURE_ENGINEERING.md §5` and `model_cards/occupancy_model.md`). This replaced the earlier review-velocity (San Francisco) estimate, which correlated only ≈ 0.13 with actual calendar occupancy. EDA-level demand indicators:
 
 | City | Calendar availability | Implied booked share | Median occupancy (days/yr) |
 |---|---:|---:|---:|
@@ -67,7 +67,7 @@ Because Inside Airbnb's calendar carries no prices (§6), occupancy is inferred 
 **Madrid leads on demand and data depth** (25k listings, ~1.3M reviews, price populated) — which is why the team prioritised it for the first end-to-end slice and the demo.
 
 ### External validation — AirROI Madrid market report
-To sanity-check the review-derived occupancy against an independent market source, we benchmarked Madrid against [AirROI](https://www.airroi.com/airbnb-data/spain/community-of-madrid/madrid) (2026 data):
+To sanity-check the calendar-derived occupancy against an independent market source, we benchmarked Madrid against [AirROI](https://www.airroi.com/airbnb-data/spain/community-of-madrid/madrid) (2026 data) — the model's central Madrid estimates (~40–50%) line up well with it:
 
 | Metric (AirROI, Madrid) | Value |
 |---|---:|

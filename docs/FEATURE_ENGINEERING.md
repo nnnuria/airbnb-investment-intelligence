@@ -92,27 +92,27 @@ Produces a **city-level lookup** `{city: {month: multiplier}}`, where 1.10 means
 
 ---
 
-## 5. Occupancy estimator — `src/airbnb_iip/data/occupancy.py`
+## 5. Occupancy model — `src/airbnb_iip/models/occupancy.py`
 
-The **San Francisco model** infers bookings from review activity (only guests who stayed can review):
+> **Replaced the San Francisco review-based estimator (2026-06).** The old model inferred bookings from review velocity and correlated only **≈ 0.13** with actual calendar occupancy on this dataset. It has been retired; `data/occupancy.py` now keeps only the lightweight calendar helpers.
+
+Occupancy is now a **learned LightGBM model** whose target comes straight from Inside Airbnb **calendar** availability — a night is booked when `available == 'f'`:
 
 ```
-nights_per_month ≈ (reviews_per_month / review_rate) × avg_length_of_stay
-nights_per_year  ≈ nights_per_month × 12
-occupancy_rate   = nights_per_year / 365     (capped at max_occupancy)
+occupancy_rate = booked_nights / calendar_nights      (per listing, first 120 calendar days from scrape)
+nights_booked_year = round(occupancy_rate × 365)
 ```
 
-Two forms: `estimate_occupancy()` (scalar, for a hypothetical property) and `estimate_occupancy_l365d()` (vectorised, reproduces Inside Airbnb's pre-computed column). Assumptions come from config:
+- **Approach:** by-city models (Madrid / Barcelona / Málaga); chosen over a single global model on held-out R².
+- **Calendar window:** the forward calendar's far tail is unreliable and the near-term weeks are always heavily booked, so the target uses each city's **first 120 days from its scrape date** (`--horizon-days 120`) — an equal-length, equal-horizon window that is **cross-city comparable**. Málaga uses a season-aligned **June-2025 scrape** (`--calendar-override`) so all three windows fall in spring/summer demand (raw means: Madrid 0.59 / Barcelona 0.58 / Málaga 0.52); a residual seasonal offset remains — see the model card.
+- **Features (36):** neighbourhood target-encoding (mean occupancy), lat/lon, competitive density, nightly **price** (demand signal — the predicted price at serve time), `minimum_nights`, `instant_bookable`, capacity (accommodates / bedrooms / bathrooms / beds), `room_type` / `property_type_std` / `city`, the 22 amenity flags + `amenity_count`. **No review or host-quality features** — that severs the review→occupancy link and keeps every feature available for a hypothetical property.
+- **Performance (held-out):** R² **0.29** (per-city Madrid 0.27 / Barcelona 0.33 / Málaga 0.29), MAE **0.18** (~66 nights/yr) vs a city-mean baseline R² of ≈0.00. Per-city and full detail in [`docs/model_cards/occupancy_model.md`](model_cards/occupancy_model.md).
+- **Training:** `scripts/train_occupancy_model.py --horizon-days 120 --calendar-override Malaga=<june_calendar.csv.gz>` (target from the three `calendar.csv.gz` dumps, features from `listings_with_price_hat.parquet`, active-listing filter, neighbourhood TE fit on train only).
+- **Serving:** `OccupancyPredictor` / `get_occupancy_predictor()`; the decision engine calls `engine.predict_occupancy(prop)`, so the dashboard, `/scenario`, `/estimate_occupancy`, and the optimisation agent all share one occupancy source.
 
-| Assumption | Value | Meaning |
-|---|---:|---|
-| `review_rate` | 0.50 | Share of stays that leave a review |
-| `avg_length_of_stay` | 3 | Mean nights per booking |
-| `max_occupancy` | 0.70 | Annual ceiling = `floor(0.70 × 365)` = **255 nights** |
+> **External validation:** the model's central Madrid estimates (~40–50%) sit much closer to AirROI's independent Madrid market occupancy of **51.6%** than the old demo's ~15%.
 
-> **Calibration note (feeds the team's occupancy debate):** AirROI's Madrid market occupancy is **51.6%**, implying ~**2.6 reviews/month** through this formula. The demo's mock input (`reviews_per_month_for_demo` in `app/components/mocks.py`) returns only **0.8–1.8**, which produces the ~15% occupancy seen in the demo — i.e. the low demo occupancy is a **mock-input problem, not the 70% cap**. The cap (255 nights) doesn't even bind at those inputs.
-
-**Stage 2 (planned, not built):** a learned LightGBM occupancy model trained on `Data/processed/listings_with_price_hat.parquet`, target `estimated_occupancy_l365d`, using `price_hat` as a feature (demand elasticity, no leakage since it's a prediction). This is the real remaining modelling work.
+The ABT's `estimated_occupancy_l365d` column is now filled from forward availability (`365 − availability_365`, also calendar-derived) by `data.occupancy.occupancy_l365d_from_availability` — Inside Airbnb's pre-computed value still wins when present.
 
 ---
 

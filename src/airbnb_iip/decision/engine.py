@@ -29,7 +29,8 @@ from airbnb_iip.config import (
     OCCUPANCY,
     PROPERTY_APPRECIATION_RATE_DEFAULT,
 )
-from airbnb_iip.data.occupancy import estimate_occupancy
+from airbnb_iip.data.occupancy import DAYS_PER_YEAR
+from airbnb_iip.models.occupancy import get_occupancy_predictor
 from airbnb_iip.models.price import get_city_price_predictor
 from airbnb_iip.models.sale import get_sale_predictor
 from airbnb_iip.finance.costs import (
@@ -432,6 +433,45 @@ def predict_nightly_price(prop: Property) -> float:
     return round(max(base + adjustment, 0.0), 2)
 
 
+# ── Occupancy (LightGBM calendar model) ───────────────────────────────────────
+
+def _occupancy_spec(prop: Property, nightly_price: float) -> dict:
+    """Build the OccupancyPredictor input from a Property + its nightly price.
+
+    Mirrors :func:`predict_nightly_price`: location (lat/lon + modal
+    neighbourhood) comes from the district context, capacity/room-type/amenities
+    from the property itself, and ``price`` is the model-predicted nightly rate
+    (a demand signal). Features the spec doesn't carry (e.g. minimum_nights,
+    property_type) are imputed with training medians inside the predictor.
+    """
+    ctx = _district_context(prop)  # latitude, longitude, neighbourhood_cleansed
+    return {
+        "city": prop.city,
+        "room_type": prop.room_type,
+        "accommodates": prop.accommodates,
+        "bedrooms": prop.bedrooms,
+        "bathrooms_number": prop.bathrooms,
+        "price": nightly_price,
+        "instant_bookable": 1,
+        **{f: int(getattr(prop, f, False)) for f in _ALL_AMENITY_FIELDS},
+        **ctx,
+    }
+
+
+def predict_occupancy(prop: Property, *, nightly_price: float | None = None) -> float:
+    """Predict annual occupancy rate (fraction in [0, 1]) via the calendar model.
+
+    Uses :class:`airbnb_iip.models.occupancy.OccupancyPredictor` — a LightGBM
+    model trained on Inside Airbnb calendar availability (``available == 'f'`` ⇒
+    booked). This replaces the retired San Francisco review-based estimator.
+    Pass ``nightly_price`` to reuse an already-computed price (avoids predicting
+    it twice); omit it and the nightly price is predicted internally.
+    """
+    if nightly_price is None:
+        nightly_price = predict_nightly_price(prop)
+    return get_occupancy_predictor().predict(_occupancy_spec(prop, nightly_price))
+
+
 def _shap_drivers(prop: Property) -> list[tuple[str, float]]:
     """SHAP contributions from the price model, augmented with residual amenity effects.
 
@@ -546,7 +586,7 @@ def compute_scenario(
     """Full Airbnb-vs-sell scenario for one property.
 
     1. LightGBM nightly price model.
-    2. Data-driven occupancy via the SF model on real comparable listings.
+    2. LightGBM occupancy model trained on Inside Airbnb calendar availability.
     3. Full Spanish STR cost stack (airbnb_iip.finance.costs).
     4. LightGBM sale price model.
     5. Break-even horizon and Monte Carlo recommendation.
@@ -570,12 +610,11 @@ def compute_scenario(
     warnings.filterwarnings("ignore")
 
     nightly = predict_nightly_price(prop)
-    rpm = reviews_per_month_from_data(prop)
 
-    occ = estimate_occupancy(rpm)
-    monthly_nights = occ["nights_booked_per_month"]
-    annual_nights = round(monthly_nights * 12)
-    occupancy_rate = monthly_nights / 30
+    # Occupancy: LightGBM model trained on Inside Airbnb calendar availability
+    # (available == 'f' ⇒ booked). Replaces the retired SF review-based estimate.
+    occupancy_rate = predict_occupancy(prop, nightly_price=nightly)
+    annual_nights = int(round(occupancy_rate * DAYS_PER_YEAR))
 
     sale_value, sale_per_m2 = predict_sale_value(prop)
 
@@ -872,8 +911,9 @@ def chat_reply(user_msg: str, scen: Scenario | None) -> str:
     if any(k in msg for k in ("occupancy", "booked", "vacancy")):
         return (
             f"Projected occupancy is **{scen.occupancy_rate_annual * 100:.0f}%** "
-            f"({scen.nights_booked_year} nights/year). This uses the San Francisco "
-            "model — inferred from review activity of comparable well-operated listings."
+            f"({scen.nights_booked_year} nights/year). This comes from a LightGBM model "
+            "trained on Inside Airbnb calendar availability (booked nights) for comparable "
+            "listings — driven by location, price, capacity, amenities and min-nights policy."
         )
     if any(k in msg for k in ("rate", "price", "nightly", "night")):
         return (
@@ -913,6 +953,6 @@ __all__ = [
     "CITIES", "CITY_LABELS", "ROOM_TYPES",
     "Property", "Scenario",
     "get_city_districts",
-    "compute_scenario", "predict_nightly_price", "predict_sale_value",
-    "reviews_per_month_from_data", "chat_reply",
+    "compute_scenario", "predict_nightly_price", "predict_occupancy",
+    "predict_sale_value", "reviews_per_month_from_data", "chat_reply",
 ]

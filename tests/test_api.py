@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import pytest
 
-from airbnb_iip.data.occupancy import estimate_occupancy
-
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -73,20 +71,36 @@ def test_explain_price_returns_ranked_drivers():
         assert (d["shap_value"] > 0) == (d["direction"] == "increases")
 
 
-def test_estimate_occupancy_matches_function():
-    reviews = 1.5
-    r = client.post("/estimate_occupancy", json={"reviews_per_month": reviews})
+def test_estimate_occupancy_matches_engine():
+    # The endpoint wraps the same calendar-based model the decision engine uses,
+    # so it must agree with engine.predict_occupancy for the same property.
+    from airbnb_iip.decision.engine import Property, predict_occupancy
+
+    spec = {
+        "city": "madrid", "district": "Salamanca", "accommodates": 4,
+        "bedrooms": 2, "bathrooms": 1.0, "room_type": "Entire home/apt",
+        "has_ac": True,
+    }
+    r = client.post("/estimate_occupancy", json=spec)
     assert r.status_code == 200
-    expected = estimate_occupancy(reviews)
-    assert r.json()["occupancy_rate"] == pytest.approx(
-        round(expected["occupancy_rate"], 4)
+    body = r.json()
+    prop = Property(city="madrid", district="Salamanca", size_m2=70, bedrooms=2,
+                    bathrooms=1.0, accommodates=4, room_type="Entire home/apt",
+                    has_ac=True)
+    assert body["occupancy_rate"] == pytest.approx(round(predict_occupancy(prop), 4))
+    assert body["model"] == "LightGBM (calendar)"
+
+
+def test_estimate_occupancy_in_valid_range():
+    r = client.post(
+        "/estimate_occupancy",
+        json={"city": "Barcelona", "district": "Eixample", "accommodates": 2},
     )
-
-
-def test_estimate_occupancy_caps_at_ceiling():
-    r = client.post("/estimate_occupancy", json={"reviews_per_month": 1000})
     assert r.status_code == 200
-    assert r.json()["occupancy_rate"] <= 0.70
+    body = r.json()
+    assert 0.0 < body["occupancy_rate"] < 1.0
+    assert body["estimated_nights_per_year"] == round(body["occupancy_rate"] * 365)
+    assert body["predicted_nightly_eur"] > 0
 
 
 def test_optimise_is_live_and_ranked():

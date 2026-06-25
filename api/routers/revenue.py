@@ -8,8 +8,8 @@ price and sale value from the models, then runs the NPV comparison.
 Inputs the request schema doesn't carry are taken from documented defaults,
 all overridable via the request body (``extra="allow"``):
 
-* occupancy for /airbnb_vs_sell — ``reviews_per_month`` → SF estimator, else
-  ``occupancy_rate``, else 0.55.
+* occupancy for /airbnb_vs_sell — explicit ``occupancy_rate`` if supplied, else
+  the calendar-based LightGBM occupancy model on the property spec.
 * ``purchase_price`` for CGT — defaults to ``sale_value`` (no gain ⇒ no CGT).
 * terminal value — the sell ``net_proceeds`` with zero appreciation
   (conservative; matches the Streamlit decision engine).
@@ -21,7 +21,7 @@ import numpy as np
 from fastapi import APIRouter, Depends
 
 from airbnb_iip.config import OCCUPANCY
-from airbnb_iip.data.occupancy import estimate_occupancy
+from airbnb_iip.models.occupancy import get_occupancy_predictor
 from airbnb_iip.finance.costs import (
     annual_gross_revenue,
     cleaning_cost_annual,
@@ -112,11 +112,17 @@ def airbnb_vs_sell(
         {"city": city, "district": req.neighbourhood_cleansed, "size_m2": req.sq_m}
     )
 
-    # Occupancy: reviews → estimator, else explicit rate, else 0.55.
-    if "reviews_per_month" in extra:
-        occ_rate = estimate_occupancy(float(extra["reviews_per_month"]))["occupancy_rate"]
+    # Occupancy: explicit rate if supplied, else the calendar-based LightGBM model.
+    if extra.get("occupancy_rate") is not None:
+        occ_rate = float(extra["occupancy_rate"])
     else:
-        occ_rate = float(extra.get("occupancy_rate") or 0.55)
+        occ_rate = get_occupancy_predictor().predict({
+            "city": city,
+            "neighbourhood_cleansed": req.neighbourhood_cleansed,
+            "room_type": extra.get("room_type", "Entire home/apt"),
+            "price": nightly,
+            **{k: extra[k] for k in ("accommodates", "bedrooms", "bathrooms_number") if k in extra},
+        })
     nights = occ_rate * DAYS_PER_YEAR
 
     cost_kwargs = dict(

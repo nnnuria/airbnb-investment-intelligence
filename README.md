@@ -144,8 +144,11 @@ by default (a "live mode" toggle exists). Never rely on live LLM calls during th
 - **Regulatory corpus** (RAG): official municipal short-term-rental rules per city stored in
   `docs/regulatory/`. These change — always verify against current official sources.
 
-The occupancy/revenue estimate uses the **San Francisco model** (bookings inferred from review
-frequency, not naïve calendar availability) and is reported as **P10/P50/P90 bands**.
+The occupancy/revenue estimate uses a **LightGBM occupancy model** trained on Inside Airbnb
+**calendar availability** (a night with `available == 'f'` is counted as booked), reported as
+**P10/P50/P90 bands**. See [`docs/model_cards/occupancy_model.md`](docs/model_cards/occupancy_model.md).
+*(This replaced the earlier San Francisco review-based estimator, which barely tracked real
+calendar occupancy.)*
 
 ---
 
