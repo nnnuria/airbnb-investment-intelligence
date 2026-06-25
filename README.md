@@ -22,7 +22,6 @@ Cities covered: **Madrid · Barcelona · Málaga** · Data snapshot: **14 Sep 20
 |---|---|---|
 | **Primary** ⭐ | Airbnb or sell? | *"I own a property — should I list it on Airbnb or sell it?"* → compares projected Airbnb net revenue against the property's indicative sale value, with break-even timelines, confidence bands, and a clear recommendation. |
 | **Secondary** | Optimise for Airbnb | *"I've decided to Airbnb — how do I maximise revenue?"* → property-specific recommendations: amenities to add, renovations with the best ROI, pricing strategy, and gap analysis vs comparable top performers. |
-| **Stretch** | Pre-purchase screening | *"If I buy this flat, what will it earn on Airbnb?"* → predicted nightly rate, seasonal occupancy, revenue P10/P50/P90, yield, and regulatory risk. |
 
 ---
 
