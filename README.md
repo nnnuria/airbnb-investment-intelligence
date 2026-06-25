@@ -1,3 +1,13 @@
+---
+title: Airbnb Investment Intelligence
+emoji: 🏠
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Airbnb Investment Intelligence Platform
 
 > A governed, multi-agent AI system that helps property owners decide whether to

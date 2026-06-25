@@ -1,0 +1,21 @@
+# Keep the build context small: ship only what the running app needs.
+.git
+.gitignore
+.claude
+.venv
+.pytest_cache
+**/__pycache__/
+*.pyc
+
+# Dev-only / heavy artifacts not needed at runtime
+notebooks/
+docs/
+tests/
+scripts/
+*.ipynb
+models/*.png
+
+# Large/raw data (the app reads the committed Data/processed + Data/regulatory)
+Data/raw/
+Data/interim/
+Data/external/
