@@ -32,11 +32,28 @@ def ctx():
     ("Is it legal to rent in Barcelona?", "regulatory"),
     ("Do I need a licence?", "regulatory"),
     ("Show me comparable listings", "comparables"),
+    ("How do I compare to the market?", "market"),
+    ("Where does my nightly rate sit vs the market?", "market"),
+    ("How competitive is my listing?", "market"),
     ("What amenities should I add to improve it?", "optimisation"),
     ("hello there", "general"),
 ])
 def test_classify_routes(message, intent):
     assert classify(message) == intent
+
+
+def test_market_answer_cites_market_analysis(ctx):
+    prop, scen = ctx
+    res = run_chat("how do I compare to the market?", property=prop, scenario=scen, use_llm=False)
+    assert res["intent"] == "market"
+    assert any("Market Analysis" in s for s in res["sources"])
+    assert "not financial advice" in res["answer"].lower()
+
+
+def test_market_without_context_gives_guidance():
+    res = run_chat("how do I compare to the market?", use_llm=False)
+    assert res["intent"] == "market"
+    assert "new analysis" in res["answer"].lower()
 
 
 def test_decision_answer_is_grounded(ctx):

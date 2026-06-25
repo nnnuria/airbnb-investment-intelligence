@@ -173,6 +173,49 @@ def chat(
     return resp.json()
 
 
+def market_report(
+    property,
+    scenario,
+    *,
+    use_llm: bool = True,
+    base_url: str | None = None,
+) -> dict:
+    """Call ``/market_report`` and return the structured market-analysis report.
+
+    ``property`` / ``scenario`` are the active analysis the UI holds in session
+    (dataclasses or dicts). The report reuses ``scenario`` as-is and adds peer
+    positioning — see ``api/schemas.py::MarketReportResponse`` for the shape.
+    Raises :class:`APIError` if the API is unreachable.
+    """
+    client = httpx.Client(base_url=base_url, timeout=_TIMEOUT) if base_url else _client()
+    try:
+        resp = client.post(
+            "/market_report",
+            json={
+                "property": _as_dict(property),
+                "scenario": _as_dict(scenario),
+                "use_llm": use_llm,
+            },
+        )
+        resp.raise_for_status()
+    except httpx.ConnectError as exc:
+        raise APIError(
+            "Can't reach the analysis API. Start it with "
+            "`uvicorn api.main:app` and try again."
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        raise APIError(
+            f"The market-report service returned an error ({exc.response.status_code})."
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise APIError(f"Market-report request failed: {exc}") from exc
+    finally:
+        if base_url:
+            client.close()
+
+    return resp.json()
+
+
 def optimise(property, *, projected_annual_nights=None, base_url: str | None = None):
     """Call ``/optimise`` and return a plan mirroring ``OptimisationPlan``.
 
@@ -241,4 +284,4 @@ def api_healthy(*, base_url: str | None = None) -> bool:
             client.close()
 
 
-__all__ = ["get_scenario", "chat", "optimise", "api_healthy", "APIError", "DEFAULT_API_BASE_URL"]
+__all__ = ["get_scenario", "chat", "market_report", "optimise", "api_healthy", "APIError", "DEFAULT_API_BASE_URL"]

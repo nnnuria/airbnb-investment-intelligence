@@ -11,6 +11,8 @@ engine, so the UI and the coordinator reach everything one way: over the API.
 
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, HTTPException
 
 from airbnb_iip.agents.comparables import get_comparables_agent
@@ -22,6 +24,8 @@ from api.schemas import (
     ChatResponse,
     ComparablesRequest,
     ComparablesResponse,
+    MarketReportRequest,
+    MarketReportResponse,
     RegulatoryRequest,
     RegulatoryResponse,
 )
@@ -86,3 +90,30 @@ def chat(req: ChatRequest) -> ChatResponse:
         use_llm=req.use_llm,
     )
     return ChatResponse(**result)
+
+
+@router.post("/market_report", response_model=MarketReportResponse)
+def market_report(req: MarketReportRequest) -> MarketReportResponse:
+    """Build a market-analysis report on the active scenario.
+
+    Orchestrates the I/O (fetch comparables for peer positioning) and hands the
+    pre-computed scenario to the Market Analyst agent, which owns the synthesis
+    + narrative. The scenario is never recomputed, so the report's numbers match
+    the analysis the UI already showed.
+    """
+    from airbnb_iip.agents.market_analyst import MarketAnalystAgent
+
+    prop = req.property or {}
+    try:
+        comparables = get_comparables_agent().find_comparables(prop, k=5)
+    except Exception:
+        # No peer set (e.g. missing data) — the report degrades to model-only
+        # positioning rather than failing the whole request.
+        comparables = {"comparables": [], "benchmark": {}, "filters_applied": {}}
+
+    # Gate the LLM on a key so the no-key path never tries to build a Gemini
+    # client (the agent raises if use_llm=True without GEMINI_API_KEY).
+    use_llm = req.use_llm and bool(os.getenv("GEMINI_API_KEY"))
+    agent = MarketAnalystAgent(use_llm=use_llm)
+    report = agent.market_report(prop, req.scenario, comparables=comparables)
+    return MarketReportResponse(**report)
