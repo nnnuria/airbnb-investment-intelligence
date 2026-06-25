@@ -72,6 +72,12 @@ BASURAS_EUR_BY_CITY: dict[str, float] = {
 }
 BASURAS_EUR_DEFAULT = 100.0
 
+# Investment horizon and discount rate defaults.
+# HOLDING_YEARS: standard 10-year DCF horizon for a hold-vs-sell decision.
+# DISCOUNT_RATE: opportunity cost of capital (risk-free ~3.5% + equity/illiquidity premium).
+HOLDING_YEARS_DEFAULT: int = 10
+DISCOUNT_RATE_DEFAULT: float = 0.07
+
 # Minimum one-time setup cost to list a property on Airbnb (professional
 # photography, deep clean, linen/supplies top-up, minor repairs). Users may
 # override upward for heavier refurbishments.

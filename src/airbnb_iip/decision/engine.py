@@ -23,7 +23,9 @@ from airbnb_iip.config import (
     AIRBNB_SETUP_COST_EUR_MIN,
     BASURAS_EUR_BY_CITY,
     BASURAS_EUR_DEFAULT,
+    DISCOUNT_RATE_DEFAULT,
     FINANCE,
+    HOLDING_YEARS_DEFAULT,
     IRPF_BRACKETS,
     NOI_GROWTH_RATE_DEFAULT,
     OCCUPANCY,
@@ -46,7 +48,7 @@ from airbnb_iip.finance.scenarios import (
     npv_sell,
 )
 
-HOLDING_YEARS = 10
+HOLDING_YEARS = HOLDING_YEARS_DEFAULT  # kept for any external references
 
 CITIES = ("madrid", "barcelona", "malaga")
 CITY_LABELS = {"madrid": "Madrid", "barcelona": "Barcelona", "malaga": "Málaga"}
@@ -203,6 +205,11 @@ class Scenario:
     ibi_method: str = "estimated"                # "cadastral" | "estimated" | "manual"
     ibi_explanation: str = ""                    # one-sentence derivation from IbiAgent
     basuras_eur_used: float = 0.0               # waste-tax amount applied
+
+    # Investment horizon & discount rate used (echoed for UI display / sensitivity)
+    npv_advantage_eur: float = 0.0              # npv_airbnb_p50_eur − npv_sell_eur
+    holding_years: int = 10
+    discount_rate: float = 0.07
 
     monthly_seasonality: list[float] = field(default_factory=list)
     cost_breakdown: list[tuple[str, float]] = field(default_factory=list)
@@ -542,6 +549,8 @@ def compute_scenario(
     property_appreciation_rate: float = PROPERTY_APPRECIATION_RATE_DEFAULT,
     include_income_tax: bool = True,
     purchase_price: float | None = None,
+    holding_years: int = HOLDING_YEARS_DEFAULT,
+    discount_rate: float = DISCOUNT_RATE_DEFAULT,
 ) -> Scenario:
     """Full Airbnb-vs-sell scenario for one property.
 
@@ -637,7 +646,7 @@ def compute_scenario(
     sell_pretax = sale_value * (1 - FINANCE["agent_commission_pct"] - FINANCE["notary_registry_pct"])
 
     # Appreciated terminal value at end of holding period
-    terminal_price = sale_value * (1 + property_appreciation_rate) ** HOLDING_YEARS
+    terminal_price = sale_value * (1 + property_appreciation_rate) ** holding_years
     terminal_sell = npv_sell(
         sale_price=terminal_price,
         purchase_price=purchase_price_basis,
@@ -664,12 +673,13 @@ def compute_scenario(
     mc = monte_carlo(
         price_hat=nightly,
         occ_hat=annual_nights,
-        years=HOLDING_YEARS,
+        years=holding_years,
         npv_sell_value=sell_net,
         cost_kwargs=cost_kwargs,
         terminal_value_net=terminal_value_net,
         setup_cost=setup_cost_eur,
         noi_growth_rate=noi_growth_rate,
+        discount_rate=discount_rate,
         random_state=42,
         n_simulations=1500,
     )
@@ -678,12 +688,13 @@ def compute_scenario(
     mc_pretax = monte_carlo(
         price_hat=nightly,
         occ_hat=annual_nights,
-        years=HOLDING_YEARS,
+        years=holding_years,
         npv_sell_value=sell_pretax,
         cost_kwargs=cost_kwargs_pretax,
         terminal_value_net=terminal_value_net,
         setup_cost=setup_cost_eur,
         noi_growth_rate=noi_growth_rate,
+        discount_rate=discount_rate,
         random_state=42,
         n_simulations=1500,
     )
@@ -699,7 +710,7 @@ def compute_scenario(
     # IRR on the after-tax NOI stream
     noi_series = [
         net_year * (1 + noi_growth_rate) ** t
-        for t in range(HOLDING_YEARS)
+        for t in range(holding_years)
     ]
     # IRR uses the forgone sale proceeds as the "investment" (opportunity cost
     # of not selling today) plus the Airbnb setup outlay. This gives the effective
@@ -766,6 +777,9 @@ def compute_scenario(
         ibi_explanation=ibi_estimate.explanation,
         basuras_eur_used=round(basuras_resolved, 0),
         setup_cost_eur_used=round(setup_cost_eur, 0),
+        npv_advantage_eur=round(mc["p50"] - sell_net, 0),
+        holding_years=holding_years,
+        discount_rate=discount_rate,
         monthly_seasonality=seasonality,
         cost_breakdown=costs,
         feature_drivers=drivers,

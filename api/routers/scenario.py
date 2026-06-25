@@ -43,5 +43,7 @@ def scenario(req: ScenarioRequest) -> ScenarioResponse:
         property_appreciation_rate=req.property_appreciation_rate,
         include_income_tax=req.include_income_tax,
         purchase_price=req.purchase_price,
+        holding_years=req.holding_years,
+        discount_rate=req.discount_rate,
     )
     return ScenarioResponse(**asdict(result))
