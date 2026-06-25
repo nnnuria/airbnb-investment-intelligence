@@ -6,7 +6,12 @@ PATHS = {
 }
 CITIES = ["madrid", "barcelona", "malaga"]
 
-OCCUPANCY = {"review_rate": 0.50, "avg_length_of_stay": 3, "max_occupancy": 0.70}
+# Occupancy is now a learned LightGBM model trained on Inside Airbnb calendar
+# data (airbnb_iip.models.occupancy) — the San Francisco review-based estimator
+# and its review_rate / max_occupancy assumptions have been retired. The only
+# surviving knob is avg_length_of_stay, a finance assumption used to turn booked
+# nights into cleaning turnovers (airbnb_iip.finance.costs.cleaning_cost_annual).
+OCCUPANCY = {"avg_length_of_stay": 3}
 FINANCE = {
     "cleaning_fee_per_stay_eur": 45,
     "management_pct": 0.20,

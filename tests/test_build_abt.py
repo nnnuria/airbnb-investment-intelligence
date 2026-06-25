@@ -25,6 +25,8 @@ def _listings(n=3, city="madrid"):
         "longitude": [-3.7038] * n,
         "reviews_per_month": [1.0] * n,
         "number_of_reviews_ltm": [12.0] * n,
+        # Forward availability → calendar-derived occupancy fill (365 - 200 = 165).
+        "availability_365": [200] * n,
     })
 
 
@@ -42,8 +44,10 @@ def test_build_abt_returns_engineered_frame_with_known_columns():
         assert col in out.columns
     # Density present
     assert "competitive_density_500m" in out.columns
-    # Occupancy estimate present (computed since input didn't have it)
+    # Occupancy present, filled from forward availability (365 - 200 = 165),
+    # not the retired review-based estimate.
     assert "estimated_occupancy_l365d" in out.columns
+    assert (out["estimated_occupancy_l365d"] == 165).all()
     # Same row count as input
     assert len(out) == len(df)
 

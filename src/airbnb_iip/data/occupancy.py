@@ -1,202 +1,130 @@
-"""San Francisco occupancy estimator (SPRINT_STATUS task 2).
+"""Calendar-based occupancy utilities.
 
-Inside Airbnb's exports include a per-listing ``estimated_occupancy_l365d``
-column derived from the **San Francisco model** — the de-facto standard for
-inferring bookings from review activity, because only guests who actually
-stayed can leave reviews. This module reimplements that estimator as two
-pure functions wired to our own auditable assumptions
-(``airbnb_iip.config.OCCUPANCY``):
+The legacy **San Francisco** review-based estimator (``estimate_occupancy`` /
+``estimate_occupancy_l365d`` — bookings inferred from review velocity) has been
+**retired**. It barely tracked real availability (corr ≈ 0.13 with calendar
+occupancy on this dataset) and has been replaced by a learned LightGBM model
+whose target comes straight from Inside Airbnb calendar data:
 
-* :func:`estimate_occupancy` — scalar form for one listing or a hypothetical
-  property (the decision-flow case where Inside Airbnb has no row).
-* :func:`estimate_occupancy_l365d` — vectorised form that produces an
-  ``estimated_occupancy_l365d`` Series matching the Inside Airbnb column,
-  ready to drop into a listings dataframe or use as a target for the
-  downstream occupancy ML model (task 4).
+    a night is "booked"  ⇔  available == 'f'
+    occupancy_rate       =  booked nights / calendar nights
 
-The model
-=========
+The model lives in :mod:`airbnb_iip.models.occupancy`
+(:class:`~airbnb_iip.models.occupancy.OccupancyPredictor`,
+:func:`~airbnb_iip.models.occupancy.get_occupancy_predictor`); it is trained by
+``scripts/train_occupancy_model.py`` and documented in
+``docs/model_cards/occupancy_model.md``.
 
-Scalar form (one listing, monthly):
-
-    nights_per_month  ≈  (reviews_per_month / review_rate) × avg_length_of_stay
-    occupancy_rate    =  nights_per_month / 30     (capped at ``max_occupancy``)
-
-Vectorised form (dataframe, annual — matches Inside Airbnb):
-
-    nights_per_year   ≈  (number_of_reviews_ltm / review_rate) × avg_length_of_stay
-    occupancy_rate    =  nights_per_year / 365     (capped at ``max_occupancy``)
-
-``number_of_reviews_ltm`` (reviews in the last 12 months) is used instead
-of ``reviews_per_month`` because it covers one full seasonal cycle of the
-most recent year and avoids lifetime-average dilution for older listings.
-Reverse-engineering the Inside Airbnb pre-computed column confirms it uses
-this input with the parameters below (83 % exact match on the dataset).
-
-Assumptions (defaults from :data:`airbnb_iip.config.OCCUPANCY`):
-
-* ``review_rate`` = 0.50 — share of stays that leave a review. Inside
-  Airbnb's published default; confirmed by reverse-engineering their column.
-* ``avg_length_of_stay`` = 3 — mean booking length in nights for urban
-  short-term rentals.
-* ``max_occupancy`` = 0.70 — annual occupancy ceiling. Caps the estimate
-  at ``floor(0.70 × 365) = 255`` nights/year, matching Inside Airbnb.
-
-This is an **indicative** estimate, not ground truth. Use it as a feature
-or target for downstream models — never present it as a guaranteed
-projection to the end user.
+This module keeps only the lightweight, dependency-free helpers used to
+**build the calendar target** and to populate the ABT's
+``estimated_occupancy_l365d`` column from forward availability — no ML import,
+no review heuristics.
 """
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
-from airbnb_iip.config import OCCUPANCY
-
 DAYS_PER_YEAR = 365
-MONTHS_PER_YEAR = 12
-DAYS_PER_MONTH = 30
+
+# Inside Airbnb encodes calendar availability as a single char: 't' = available
+# (bookable), 'f' = not available, which we treat as a booked night.
+BOOKED_FLAG = "f"
 
 
-def estimate_occupancy(
-    reviews_per_month: float | None,
+def occupancy_rate_from_calendar(
+    calendar: Any,
     *,
-    review_rate: float = OCCUPANCY["review_rate"],
-    avg_length_of_stay: float = OCCUPANCY["avg_length_of_stay"],
-    max_occupancy: float = OCCUPANCY["max_occupancy"],
-) -> dict[str, float]:
-    """Monthly occupancy estimate for one listing using the SF model.
+    id_col: str = "listing_id",
+    available_col: str = "available",
+) -> Any:
+    """Per-listing occupancy rate from an Inside Airbnb calendar frame.
+
+    Occupancy is the share of a listing's forward-calendar nights that are
+    **not available** (``available == 'f'`` ⇒ booked).
 
     Parameters
     ----------
-    reviews_per_month
-        Average reviews per month for the listing. ``None`` and ``NaN`` are
-        treated as zero (no review history → no inferred bookings).
-        Negative inputs are clamped to zero.
-    review_rate
-        Share of stays that leave a review. Must be in ``(0, 1]``. Default
-        from :data:`airbnb_iip.config.OCCUPANCY`.
-    avg_length_of_stay
-        Mean nights per booking. Must be ``> 0``. Default from config.
-    max_occupancy
-        Annual occupancy ceiling in ``(0, 1]``. Applied as a monthly cap of
-        ``max_occupancy * 30`` nights. Default from config.
+    calendar
+        A pandas DataFrame with one row per (listing, date) and at least
+        ``id_col`` and ``available_col`` columns.
+    id_col, available_col
+        Column names. Default to Inside Airbnb's ``listing_id`` / ``available``.
 
     Returns
     -------
-    dict with:
-        ``nights_booked_per_month`` : float
-            Estimated booked nights/month, capped at ``max_occupancy * 30``.
-        ``occupancy_rate`` : float
-            ``nights_booked_per_month / 30``, in ``[0, max_occupancy]``.
+    pandas.DataFrame
+        One row per listing with columns ``listing_id`` (named after
+        ``id_col``), ``occupancy_rate`` (float in [0, 1]), ``calendar_days``
+        (window length), and ``occupancy_nights_l365d`` (rate × 365, int).
 
     Raises
     ------
-    ValueError
-        If any of the assumption parameters are out of range, or if
-        ``reviews_per_month`` is non-numeric (other than ``None`` / ``NaN``).
-    """
-    _validate_assumptions(review_rate, avg_length_of_stay, max_occupancy)
-
-    r = _coerce_reviews_per_month(reviews_per_month)
-    nights_per_month = (r / review_rate) * avg_length_of_stay
-    ceiling = max_occupancy * DAYS_PER_MONTH
-    nights = min(nights_per_month, ceiling)
-    return {
-        "nights_booked_per_month": nights,
-        "occupancy_rate": nights / DAYS_PER_MONTH,
-    }
-
-
-def estimate_occupancy_l365d(
-    df: Any,
-    *,
-    review_rate: float = OCCUPANCY["review_rate"],
-    avg_length_of_stay: float = OCCUPANCY["avg_length_of_stay"],
-    max_occupancy: float = OCCUPANCY["max_occupancy"],
-    reviews_ltm_col: str = "number_of_reviews_ltm",
-):
-    """Vectorised SF estimator: estimated booked nights over the last 365 days.
-
-    Drop-in replacement for Inside Airbnb's pre-computed
-    ``estimated_occupancy_l365d`` column. Same name, same dtype (int64),
-    same upper bound (255 nights with the default 0.70 ceiling).
-
-    Parameters
-    ----------
-    df
-        A pandas DataFrame containing ``reviews_ltm_col`` — the count of
-        reviews received in the last 12 months. NaN and negative values are
-        treated as zero.
-    review_rate, avg_length_of_stay, max_occupancy
-        See :func:`estimate_occupancy`. Defaults from
-        :data:`airbnb_iip.config.OCCUPANCY`.
-    reviews_ltm_col
-        Override the source column name. Defaults to
-        ``"number_of_reviews_ltm"`` — the Inside Airbnb canonical name for
-        last-twelve-months review count.
-
-    Returns
-    -------
-    pandas.Series
-        Named ``estimated_occupancy_l365d``, indexed like ``df``, ``int64``
-        dtype, values in ``[0, floor(max_occupancy * 365)]``.
-
-    Raises
-    ------
-    ValueError
-        If assumptions are out of range.
     KeyError
-        If ``reviews_ltm_col`` is missing from ``df``.
+        If a required column is missing.
     """
     import pandas as pd
 
-    _validate_assumptions(review_rate, avg_length_of_stay, max_occupancy)
-    if reviews_ltm_col not in df.columns:
-        raise KeyError(
-            f"DataFrame is missing column {reviews_ltm_col!r}. "
-            "Pass reviews_ltm_col= to override the source column."
-        )
+    for col in (id_col, available_col):
+        if col not in calendar.columns:
+            raise KeyError(f"calendar is missing required column {col!r}")
 
-    reviews = (
-        pd.to_numeric(df[reviews_ltm_col], errors="coerce")
-        .fillna(0.0)
-        .clip(lower=0.0)
+    booked = (
+        calendar[available_col].astype(str).str.strip() == BOOKED_FLAG
+    ).astype("int8")
+    grouped = booked.groupby(calendar[id_col])
+    out = grouped.mean().rename("occupancy_rate").reset_index()
+    out["calendar_days"] = grouped.size().to_numpy()
+    out["occupancy_nights_l365d"] = (
+        (out["occupancy_rate"] * DAYS_PER_YEAR).round().astype("int64")
     )
-    nights_year = (reviews / review_rate) * avg_length_of_stay
-    ceiling = math.floor(max_occupancy * DAYS_PER_YEAR)
-    capped = nights_year.clip(upper=ceiling)
+    return out
+
+
+def occupancy_l365d_from_availability(
+    df: Any,
+    *,
+    availability_col: str = "availability_365",
+) -> Any:
+    """Booked nights over the next 365 days from forward availability.
+
+    ``estimated_occupancy_l365d = 365 − availability_365``. Inside Airbnb's
+    ``availability_365`` is the count of bookable nights in the next year, so
+    its complement is the count of taken (booked/blocked) nights — a purely
+    **calendar-derived** quantity, not a review heuristic.
+
+    Drop-in replacement for the ABT fill that the retired SF estimator used to
+    provide. Returns an ``int64`` Series named ``estimated_occupancy_l365d``,
+    indexed like ``df``, values in ``[0, 365]``.
+
+    Raises
+    ------
+    KeyError
+        If ``availability_col`` is missing from ``df``.
+    """
+    import pandas as pd
+
+    if availability_col not in df.columns:
+        raise KeyError(
+            f"DataFrame is missing column {availability_col!r}. "
+            "Pass availability_col= to override the source column."
+        )
+    avail = (
+        pd.to_numeric(df[availability_col], errors="coerce")
+        .fillna(DAYS_PER_YEAR)
+        .clip(lower=0, upper=DAYS_PER_YEAR)
+    )
     return (
-        capped.round()
+        (DAYS_PER_YEAR - avail)
+        .round()
         .astype("int64")
         .rename("estimated_occupancy_l365d")
     )
 
 
-def _validate_assumptions(
-    review_rate: float, avg_length_of_stay: float, max_occupancy: float,
-) -> None:
-    if not 0 < review_rate <= 1:
-        raise ValueError(f"review_rate must be in (0, 1], got {review_rate}")
-    if avg_length_of_stay <= 0:
-        raise ValueError(
-            f"avg_length_of_stay must be > 0, got {avg_length_of_stay}"
-        )
-    if not 0 < max_occupancy <= 1:
-        raise ValueError(f"max_occupancy must be in (0, 1], got {max_occupancy}")
-
-
-def _coerce_reviews_per_month(value: Any) -> float:
-    """Treat ``None``/``NaN``/negative as zero; raise on non-numeric input."""
-    if value is None:
-        return 0.0
-    try:
-        v = float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(
-            f"reviews_per_month must be numeric or None, got {value!r}"
-        ) from exc
-    if math.isnan(v):
-        return 0.0
-    return max(v, 0.0)
+__all__ = [
+    "DAYS_PER_YEAR",
+    "BOOKED_FLAG",
+    "occupancy_rate_from_calendar",
+    "occupancy_l365d_from_availability",
+]

@@ -1,15 +1,18 @@
 """Live endpoints: /predict_price and /estimate_occupancy.
 
-Both depend only on already-merged code (the LightGBM price model and
-``airbnb_iip.data.occupancy``), so they return real predictions today.
+Both serve real LightGBM models: the nightly-price model and the calendar-based
+occupancy model (``airbnb_iip.models.occupancy``, target = Inside Airbnb
+calendar availability, ``available == 'f'`` ⇒ booked).
 """
 
 from __future__ import annotations
 
+from dataclasses import fields
+
 from fastapi import APIRouter, Depends
 
-from airbnb_iip.config import OCCUPANCY
-from airbnb_iip.data.occupancy import DAYS_PER_YEAR, estimate_occupancy
+from airbnb_iip.data.occupancy import DAYS_PER_YEAR
+from airbnb_iip.decision.engine import Property, predict_occupancy, predict_nightly_price
 from airbnb_iip.models.price import PricePredictor
 
 from api.dependencies import price_predictor
@@ -22,6 +25,8 @@ from api.schemas import (
 )
 
 router = APIRouter(tags=["airbnb"])
+
+_PROPERTY_FIELDS = {f.name for f in fields(Property)}
 
 
 @router.post("/predict_price", response_model=PredictPriceResponse)
@@ -59,24 +64,23 @@ def explain_price(
 def estimate_occupancy_endpoint(
     req: EstimateOccupancyRequest,
 ) -> EstimateOccupancyResponse:
-    """Estimate occupancy from review velocity (San Francisco model)."""
-    review_rate = req.review_rate or OCCUPANCY["review_rate"]
-    avg_los = req.avg_length_of_stay or OCCUPANCY["avg_length_of_stay"]
-    max_occ = req.max_occupancy or OCCUPANCY["max_occupancy"]
+    """Predict annual occupancy with the calendar-based LightGBM model.
 
-    result = estimate_occupancy(
-        req.reviews_per_month,
-        review_rate=review_rate,
-        avg_length_of_stay=avg_los,
-        max_occupancy=max_occ,
-    )
+    Wraps ``engine.predict_occupancy`` so this endpoint and ``/scenario`` share
+    one occupancy source. The nightly price is predicted internally (or taken
+    from ``price_per_night`` when supplied) as a demand signal for the model.
+    """
+    spec = req.model_dump(exclude_none=True)
+    spec["district"] = req.district or req.neighbourhood_cleansed or "Centro"
+    prop = Property(**{k: v for k, v in spec.items() if k in _PROPERTY_FIELDS})
+
+    nightly = req.price_per_night
+    if nightly is None:
+        nightly = predict_nightly_price(prop)
+    occ_rate = predict_occupancy(prop, nightly_price=nightly)
+
     return EstimateOccupancyResponse(
-        occupancy_rate=round(result["occupancy_rate"], 4),
-        nights_booked_per_month=round(result["nights_booked_per_month"], 2),
-        estimated_nights_per_year=round(result["occupancy_rate"] * DAYS_PER_YEAR),
-        assumptions={
-            "review_rate": review_rate,
-            "avg_length_of_stay": avg_los,
-            "max_occupancy": max_occ,
-        },
+        occupancy_rate=round(occ_rate, 4),
+        estimated_nights_per_year=round(occ_rate * DAYS_PER_YEAR),
+        predicted_nightly_eur=round(float(nightly), 2),
     )

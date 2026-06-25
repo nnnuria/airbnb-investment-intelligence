@@ -13,10 +13,13 @@ What it does
 2. Append amenity binary flags via :func:`airbnb_iip.features.amenities.add_amenity_flags`.
 3. Append competitive density via
    :func:`airbnb_iip.features.density.add_competitive_density`.
-4. Append the SF occupancy estimate via
-   :func:`airbnb_iip.data.occupancy.estimate_occupancy_l365d` —
-   only when ``estimated_occupancy_l365d`` is not already present (Inside
-   Airbnb's pre-computed column wins when available).
+4. Fill ``estimated_occupancy_l365d`` from forward calendar availability via
+   :func:`airbnb_iip.data.occupancy.occupancy_l365d_from_availability`
+   (``365 − availability_365``) — only when the column is not already present
+   (Inside Airbnb's pre-computed value wins) and ``availability_365`` exists.
+   This is calendar-derived, not the retired review-based estimate; the learned
+   occupancy model (:mod:`airbnb_iip.models.occupancy`) is served separately by
+   the decision engine.
 5. Optionally write a versioned parquet to
    ``Data/processed/<city>_abt_<YYYY-MM-DD>.parquet``.
 
@@ -46,7 +49,7 @@ from typing import Iterable
 
 import pandas as pd
 
-from airbnb_iip.data.occupancy import estimate_occupancy_l365d
+from airbnb_iip.data.occupancy import occupancy_l365d_from_availability
 from airbnb_iip.features.amenities import add_amenity_flags
 from airbnb_iip.features.density import add_competitive_density
 
@@ -114,8 +117,17 @@ def build_abt(
     df = add_competitive_density(df)
 
     if "estimated_occupancy_l365d" not in df.columns:
-        df["estimated_occupancy_l365d"] = estimate_occupancy_l365d(df)
-        logger.info("build_abt(%s): added estimated_occupancy_l365d", city)
+        if "availability_365" in df.columns:
+            df["estimated_occupancy_l365d"] = occupancy_l365d_from_availability(df)
+            logger.info(
+                "build_abt(%s): added estimated_occupancy_l365d "
+                "from forward availability (365 - availability_365)", city,
+            )
+        else:
+            logger.warning(
+                "build_abt(%s): no availability_365 column — "
+                "estimated_occupancy_l365d left unset", city,
+            )
     else:
         logger.info(
             "build_abt(%s): estimated_occupancy_l365d already present "

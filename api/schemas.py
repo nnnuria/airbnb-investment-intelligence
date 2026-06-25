@@ -91,22 +91,36 @@ class ExplainPriceResponse(BaseModel):
 # ── /estimate_occupancy ─────────────────────────────────────────────────────────
 
 class EstimateOccupancyRequest(BaseModel):
-    """Inputs for the San Francisco occupancy estimator.
+    """Property spec for the calendar-based LightGBM occupancy model.
 
-    Assumption overrides default to ``config.yaml`` values when omitted.
+    Field names mirror the engine's ``Property``; ``extra="allow"`` carries the
+    amenity flags (``has_ac`` …). Occupancy is **predicted from the calendar
+    model**, not derived from review velocity. ``price_per_night`` is optional —
+    the nightly-price model fills it in when omitted.
     """
 
-    reviews_per_month: float = Field(ge=0, examples=[1.5])
-    review_rate: Optional[float] = Field(default=None, gt=0, le=1)
-    avg_length_of_stay: Optional[float] = Field(default=None, gt=0)
-    max_occupancy: Optional[float] = Field(default=None, gt=0, le=1)
+    model_config = ConfigDict(extra="allow")
+
+    city: str = Field(examples=["madrid"])
+    district: Optional[str] = Field(default=None, examples=["Salamanca"])
+    neighbourhood_cleansed: Optional[str] = None
+    room_type: str = Field(default="Entire home/apt", examples=["Entire home/apt"])
+    accommodates: int = Field(default=2, ge=1, le=20)
+    bedrooms: int = Field(default=1, ge=0)
+    bathrooms: float = Field(default=1.0, ge=0)
+    size_m2: float = Field(default=70.0, gt=0)
+    price_per_night: Optional[float] = Field(
+        default=None, ge=0,
+        description="Nightly rate (demand signal). Predicted by the price model when omitted.",
+    )
 
 
 class EstimateOccupancyResponse(BaseModel):
-    occupancy_rate: float = Field(examples=[0.30], description="Fraction in [0, max_occupancy]")
-    nights_booked_per_month: float
+    occupancy_rate: float = Field(examples=[0.42], description="Annual occupancy fraction in [0, 1]")
     estimated_nights_per_year: int
-    assumptions: dict
+    predicted_nightly_eur: float
+    model: str = "LightGBM (calendar)"
+    basis: str = "Inside Airbnb calendar availability — available == 'f' counted as a booked night"
 
 
 # ── /estimate_revenue (stub) ─────────────────────────────────────────────────────

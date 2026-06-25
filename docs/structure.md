@@ -56,7 +56,7 @@ airbnb-investment-intelligence/
 ├── src/airbnb_iip/             # the installable package
 │   ├── config.py               # loads config.yaml
 │   ├── data/        loader.py · clean.py · abt.py        # build_abt(city)
-│   ├── features/    engineering.py · occupancy.py · selection.py   # SF-model, VIF/RFE
+│   ├── features/    engineering.py · occupancy.py · selection.py   # calendar occupancy, VIF/RFE
 │   ├── models/      price.py · demand.py · segmentation.py · nlp.py
 │   ├── finance/     scenarios.py     # PURE functions — Airbnb-vs-sell decision engine core
 │   └── agents/      coordinator.py · market_analyst.py · optimisation.py · regulatory.py · comparables.py
@@ -119,7 +119,8 @@ python -c "import airbnb_iip; print('ok')"
 ## 5. Config & secrets
 
 - **Every tunable number lives in `config/config.yaml`**, never hardcoded: data paths,
-  occupancy params (`review_rate`, `avg_length_of_stay`, occupancy cap), and especially the
+  the occupancy finance assumption (`avg_length_of_stay`; occupancy itself is now a learned
+  calendar-based model — see `models/occupancy.py`), and especially the
   **financial assumptions** (cleaning cost, management %, platform fee, tax rate). The finance
   engine's credibility depends on these being visible and adjustable, and governance wants
   assumptions auditable.
@@ -217,7 +218,8 @@ given city. In order, it:
    imputation; IQR/percentile outlier capping; drops known bad rows.
 3. **Engineers features:** amenity count + key amenity dummies; `host_tenure_days`;
    `reviews_per_month`; price-per-person; neighbourhood aggregates; calendar-derived
-   seasonality; the **estimated occupancy** (San Francisco model).
+   seasonality; and **calendar-derived occupancy** (`available == 'f'` ⇒ booked), the target
+   of the learned LightGBM occupancy model (`models/occupancy.py`).
 4. **Enriches** by joining external **district-level** data — sale €/m² — onto each listing
    (the sell-side anchor for the Airbnb-vs-sell comparison).
 5. **Attaches the `segment` label** from the clustering step (used as a feature + for benchmarking).
