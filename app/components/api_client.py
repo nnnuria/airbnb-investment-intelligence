@@ -69,6 +69,8 @@ def get_scenario(
     property_appreciation_rate: float = 0.03,
     include_income_tax: bool = True,
     purchase_price: float | None = None,
+    holding_years: int = 10,
+    discount_rate: float = 0.07,
     base_url: str | None = None,
 ) -> Scenario:
     """POST a property to ``/scenario`` and return the full Scenario.
@@ -89,6 +91,8 @@ def get_scenario(
         "noi_growth_rate": noi_growth_rate,
         "property_appreciation_rate": property_appreciation_rate,
         "include_income_tax": include_income_tax,
+        "holding_years": holding_years,
+        "discount_rate": discount_rate,
     }
     if ibi_eur is not None:
         payload["ibi_eur"] = ibi_eur

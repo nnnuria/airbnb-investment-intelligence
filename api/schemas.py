@@ -259,6 +259,8 @@ class ScenarioRequest(BaseModel):
     property_appreciation_rate: float = Field(default=0.03, ge=0, le=0.20, description="Annual property price appreciation rate.")
     include_income_tax: bool = Field(default=True, description="Whether to deduct income tax from NOI. False shows pre-tax comparison.")
     purchase_price: Optional[float] = Field(default=None, ge=0, description="Original purchase price for CGT calculation. Defaults to 70% of current value.")
+    holding_years: int = Field(default=10, ge=5, le=30, description="Investment horizon in years (5–30).")
+    discount_rate: float = Field(default=0.07, ge=0.03, le=0.20, description="Opportunity cost of capital / discount rate.")
 
 
 class ScenarioResponse(BaseModel):
@@ -294,6 +296,9 @@ class ScenarioResponse(BaseModel):
     ibi_explanation: str = ""
     basuras_eur_used: float = 0.0
     setup_cost_eur_used: float = 0.0
+    npv_advantage_eur: float = 0.0
+    holding_years: int = 10
+    discount_rate: float = 0.07
 
     monthly_seasonality: list[float] = Field(default_factory=list)
     # (label, eur) cost lines and (label, fraction) SHAP drivers; tuples

@@ -272,7 +272,26 @@ with adv_col2:
         step=0.5,
         format="%.1f%%",
         help="Expected annual property price growth, applied to the terminal "
-             "sale value at the end of the 10-year horizon.",
+             "sale value at the end of the holding period.",
+    )
+    holding_years_input = st.slider(
+        "Holding period (years)",
+        min_value=5,
+        max_value=30,
+        value=10,
+        step=1,
+        help="How many years you plan to hold before selling. "
+             "The terminal sale value is discounted back to today at the end of this period.",
+    )
+    discount_rate_pct = st.slider(
+        "Discount rate (opportunity cost, %)",
+        min_value=3.0,
+        max_value=15.0,
+        value=7.0,
+        step=0.5,
+        format="%.1f%%",
+        help="Your personal hurdle rate — the return you'd expect from an alternative "
+             "investment of the same capital. 7% is a reasonable default for Spanish property.",
     )
 with adv_col3:
     st.markdown("**Tax options**")
@@ -339,6 +358,8 @@ if submitted:
             property_appreciation_rate=appreciation_pct / 100.0,
             include_income_tax=include_tax,
             purchase_price=float(purchase_price_input) if purchase_price_input > 0 else None,
+            holding_years=int(holding_years_input),
+            discount_rate=discount_rate_pct / 100.0,
         )
         st.session_state.pop("api_error", None)
     except APIError as exc:
@@ -525,10 +546,13 @@ if scen and prop:
             "P50 · with income tax & CGT",
         )
     with npv_ab_pre_col:
+        _adv = getattr(scen, "npv_advantage_eur", scen.npv_airbnb_p50_eur - scen.npv_sell_eur)
+        _adv_sign = "+" if _adv >= 0 else ""
         card(
-            "NPV Airbnb (pre-tax)",
-            f"€{scen.npv_airbnb_pretax_p50_eur:,.0f}",
-            "P50 · before income tax",
+            "Airbnb advantage (P50)",
+            f"{_adv_sign}€{_adv:,.0f}",
+            "vs selling today · after tax",
+            featured=_adv > 0,
         )
     with npv_s_col:
         card(
@@ -546,11 +570,13 @@ if scen and prop:
     _ibi_method_label = {"cadastral": "exact cadastral", "manual": "manual override", "estimated": "estimated"}.get(
         getattr(scen, "ibi_method", "estimated"), "estimated"
     )
+    _hy = getattr(scen, "holding_years", 10)
+    _dr = getattr(scen, "discount_rate", 0.07)
     st.caption(
         f"IBI applied: **€{scen.ibi_eur_used:,.0f}/yr** ({_ibi_method_label}) · "
         f"Basuras: **€{getattr(scen, 'basuras_eur_used', 0):,.0f}/yr** · "
         f"Setup cost: **€{scen.setup_cost_eur_used:,.0f}** · "
-        "Discount rate: 7% · Holding period: 10 years"
+        f"Discount rate: **{_dr*100:.1f}%** · Holding period: **{_hy} years**"
     )
     _ibi_explanation = getattr(scen, "ibi_explanation", "")
     if _ibi_explanation:
