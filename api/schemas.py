@@ -370,6 +370,38 @@ class ChatResponse(BaseModel):
     disclaimer: str = "Indicative only — not financial advice."
 
 
+# ── /market_report ───────────────────────────────────────────────────────────────
+
+class MarketReportRequest(BaseModel):
+    """Build a market-analysis report from an *already-computed* scenario.
+
+    The report reuses the active analysis (so its numbers can't drift from what
+    the UI shows) and adds peer positioning from the comparables agent; it never
+    recomputes the scenario.
+    """
+
+    property: Optional[dict] = Field(
+        default=None, description="Property-shaped context (city, district, room_type, …) — used for comparable filters."
+    )
+    scenario: dict = Field(description="The active /scenario response to build the report on.")
+    use_llm: bool = Field(
+        default=True, description="False forces the deterministic (LLM-free) narrative."
+    )
+
+
+class MarketReportResponse(BaseModel):
+    city: str
+    neighbourhood: str
+    recommendation: str
+    confidence: dict = Field(default_factory=dict)
+    subject: dict = Field(default_factory=dict, description="The subject property's own headline numbers.")
+    positioning: dict = Field(default_factory=dict, description="Subject vs peer median/P25-P75 for nightly + revenue.")
+    drivers: list = Field(default_factory=list)
+    comparables: list = Field(default_factory=list)
+    narrative: str
+    disclaimer: str = "Indicative only — not financial advice."
+
+
 # ── health ─────────────────────────────────────────────────────────────────────
 
 class HealthResponse(BaseModel):

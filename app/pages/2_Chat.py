@@ -38,13 +38,15 @@ scen = st.session_state.get("scenario")
 prop = st.session_state.get("property")
 
 
-def _assistant_reply(prompt: str) -> str:
+def _assistant_reply(prompt: str) -> dict:
     """Route a message through the API coordinator, with the active analysis
-    as context. Falls back to a friendly error if the API is unreachable."""
+    as context. Returns ``{content, sources}``; falls back to a friendly error
+    if the API is unreachable."""
     try:
-        return chat_api(prompt, property=prop, scenario=scen)["answer"]
+        res = chat_api(prompt, property=prop, scenario=scen)
+        return {"content": res.get("answer", ""), "sources": res.get("sources", [])}
     except APIError as exc:
-        return f"⚠️ {exc}"
+        return {"content": f"⚠️ {exc}", "sources": []}
 
 
 # ── Context banner (above messages) ──────────────────────────────────────────
@@ -85,6 +87,8 @@ if "chat_history" not in st.session_state:
 for msg in st.session_state["chat_history"]:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
+        if msg.get("sources"):
+            st.caption("Sources: " + " · ".join(msg["sources"]))
 
 # ── Quick-prompt chips ───────────────────────────────────────────────────────
 st.markdown(
@@ -95,8 +99,8 @@ st.markdown(
 chip_cols = st.columns(4)
 suggestions = [
     "Why this recommendation?",
+    "How do I compare to the market?",
     "What about regulations?",
-    "How is occupancy estimated?",
     "What if I added AC?",
 ]
 for col, prompt in zip(chip_cols, suggestions):
@@ -106,7 +110,7 @@ for col, prompt in zip(chip_cols, suggestions):
             with st.spinner("Thinking…"):
                 reply = _assistant_reply(prompt)
             st.session_state["chat_history"].append(
-                {"role": "assistant", "content": reply},
+                {"role": "assistant", "content": reply["content"], "sources": reply["sources"]},
             )
             st.rerun()
 
@@ -117,7 +121,7 @@ if user_input:
     with st.spinner("Thinking…"):
         reply = _assistant_reply(user_input)
     st.session_state["chat_history"].append(
-        {"role": "assistant", "content": reply},
+        {"role": "assistant", "content": reply["content"], "sources": reply["sources"]},
     )
     st.rerun()
 

@@ -3,9 +3,11 @@
 One entry point (:func:`run_chat`) takes a user message plus the current
 analysis context (property + scenario) and routes it to the right specialist:
 
-    route ─┬─ decision      → Market Analyst (narrates the live scenario)
+    route ─┬─ financial     → Financial Analyst (IRR, tax, IBI, cost breakdown)
+           ├─ decision      → Market Analyst (narrates the live scenario)
            ├─ regulatory    → Regulatory RAG agent (Gemini + FAISS)
            ├─ comparables   → Comparables agent (KNN over the ABT)
+           ├─ market        → Market Analyst positioning (subject vs peer comps)
            ├─ optimisation  → improvement ideas (agents.optimisation: Apriori + gap)
            └─ general       → capability guidance
                               ↓
@@ -44,7 +46,7 @@ class ChatState(TypedDict, total=False):
     meta: dict
 
 
-INTENTS = ("financial", "decision", "regulatory", "comparables", "optimisation", "general")
+INTENTS = ("financial", "decision", "regulatory", "comparables", "market", "optimisation", "general")
 
 
 def classify(message: str) -> str:
@@ -52,12 +54,20 @@ def classify(message: str) -> str:
     checked before the broad 'decision' bucket (which owns generic words like
     'price' and 'why'). 'financial' is checked before 'decision' so that
     detailed financial questions (IRR, tax, IBI, cost breakdown) get the
-    specialist agent rather than the general market narrative."""
+    specialist agent rather than the general market narrative. 'market'
+    (positioning vs peers) sits after 'comparables' so an explicit ask for the
+    comp *listings* still routes there, while 'how do I compare?' style
+    positioning questions get the market-analysis answer."""
     m = (message or "").lower()
     if any(k in m for k in ("regulat", "licen", "legal", "permit", "law", "allowed to rent")):
         return "regulatory"
     if any(k in m for k in ("comparable", "similar listing", "benchmark", "comps", "competitor", "other listings")):
         return "comparables"
+    if any(k in m for k in (
+        "market", "positioning", "position vs", "compare", "comparison", "compares",
+        "competitive", "stack up", "stacks up", "peer", "versus", "vs the",
+    )):
+        return "market"
     if any(k in m for k in ("improve", "optimis", "optimiz", "amenity", "amenities", "uplift", "renovat", "upgrade", "add ")):
         return "optimisation"
     if any(k in m for k in (
@@ -83,40 +93,6 @@ def classify(message: str) -> str:
 
 def _has_key() -> bool:
     return bool(os.getenv("GEMINI_API_KEY"))
-
-
-@lru_cache(maxsize=1)
-def _chat_llm():
-    from langchain_google_genai import ChatGoogleGenerativeAI
-
-    return ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        google_api_key=os.getenv("GEMINI_API_KEY"),
-        temperature=0.3,
-        max_output_tokens=400,
-        thinking_budget=0,  # see market_analyst.py — keeps the visible answer intact
-    )
-
-
-_CHAT_PROMPT = """You are the investment co-pilot for an Airbnb-vs-sell platform.
-Answer the owner's question in 2-4 sentences, conversational and specific, using
-ONLY the numbers below. Do not invent figures. End with exactly:
-"⚠️ Indicative only — not financial advice."
-
-Question: {question}
-
-Facts for {neighbourhood}, {city}:
-- Recommendation: {recommendation} (confidence P(Airbnb beats Sell) = {p_airbnb})
-- Predicted nightly rate: €{nightly}/night
-- Occupancy: {occ_pct}% ({nights} nights/year)
-- Net annual revenue: €{net} (P10-P90: €{p10}-€{p90}); gross €{gross}
-- Indicative sale value: €{sale} (€{per_m2}/m²)
-- Break-even vs. selling today: {break_even} years
-- NPV if kept as Airbnb (P50): €{npv_airbnb}; net sale proceeds: €{npv_sell}
-- Annual cost breakdown (gross minus these = net): {costs}
-- Top price drivers: {drivers}
-
-Answer:"""
 
 
 # ── Nodes ─────────────────────────────────────────────────────────────────────
@@ -148,102 +124,51 @@ def _market_node(state: ChatState) -> dict:
             "sources": [],
         }
 
-    if state.get("use_llm") and _has_key():
-        answer = _llm_decision_answer(state["message"], facts)
-    else:
-        answer = _deterministic_decision_answer(state["message"], facts)
+    # Delegate to the Market Analyst agent — the single source of truth for the
+    # decision narrative (LLM and deterministic). Constructed per-call like
+    # _financial_node; use_llm is gated on a key so the no-key path never builds
+    # a Gemini client, and the agent's httpx client stays lazy (unused here).
+    from airbnb_iip.agents.market_analyst import MarketAnalystAgent
+
+    agent = MarketAnalystAgent(use_llm=bool(state.get("use_llm") and _has_key()))
     return {
-        "answer": answer,
+        "answer": agent.answer(state.get("message", ""), facts),
         "sources": ["LightGBM price model (SHAP drivers)", "finance engine (NPV + Monte-Carlo)"],
     }
 
 
-def _llm_decision_answer(question: str, facts: dict) -> str:
-    s = facts["scenario"]
-    drivers = ", ".join(d["feature"] for d in facts["drivers"][:3])
-    costs = "; ".join(
-        f"{label} €{value:,.0f}" for label, value in s.get("cost_breakdown", [])
-    ) or "n/a"
-    prompt = _CHAT_PROMPT.format(
-        question=question,
-        neighbourhood=facts["neighbourhood"],
-        city=str(facts["city"]).title(),
-        recommendation=facts["recommendation"],
-        p_airbnb=facts["confidence"].get("p_airbnb_gt_sell"),
-        nightly=f"{facts['nightly_price_eur']:.0f}",
-        occ_pct=f"{s['occupancy_rate_annual'] * 100:.0f}",
-        nights=s["nights_booked_year"],
-        net=f"{facts['annual_net_eur']:,.0f}",
-        p10=f"{facts['p10_eur']:,.0f}",
-        p90=f"{facts['p90_eur']:,.0f}",
-        gross=f"{facts['annual_gross_eur']:,.0f}",
-        sale=f"{s['sale_price_eur']:,.0f}",
-        per_m2=f"{s['sale_price_per_m2_eur']:,.0f}",
-        break_even=facts["break_even_years"],
-        npv_airbnb=f"{facts['npv_airbnb_p50_eur']:,.0f}",
-        npv_sell=f"{facts['npv_sell_eur']:,.0f}",
-        costs=costs,
-        drivers=drivers,
-    )
+def _market_positioning_node(state: ChatState) -> dict:
+    """Answer market-positioning questions ('how do I compare to the market?')
+    from the Market Analysis: peer comparables benchmark + the live scenario."""
+    facts = _decision_answer_facts(state)
+    if facts is None:
+        return {
+            "answer": (
+                "I don't have an analysis loaded yet. Run a property on **New "
+                "analysis** and I'll show how it sits against comparable listings "
+                "nearby — nightly rate and revenue versus the local market."
+            ),
+            "sources": [],
+        }
+
+    prop = state.get("property") or {}
     try:
-        resp = _chat_llm().invoke(prompt)
-        text = resp.content if hasattr(resp, "content") else str(resp)
-        return text.strip()
+        from airbnb_iip.agents.comparables import get_comparables_agent
+
+        comparables = get_comparables_agent().find_comparables(prop, k=5)
     except Exception:
-        # Quota/network/etc. — never fail the chat; drop to the deterministic answer.
-        return _deterministic_decision_answer(question, facts)
+        # No peer set (missing data, etc.) — the answer degrades to the model
+        # estimate rather than failing.
+        comparables = {"comparables": [], "benchmark": {}}
 
+    from airbnb_iip.agents.market_analyst import MarketAnalystAgent, market_positioning
 
-def _deterministic_decision_answer(question: str, facts: dict) -> str:
-    """LLM-free targeted answer built from the real scenario numbers."""
-    m = (question or "").lower()
-    s = facts["scenario"]
-    if any(k in m for k in ("cost", "fee", "tax", "expens", "deduct", "noi")):
-        lines = "; ".join(
-            f"{label} €{value:,.0f}" for label, value in s.get("cost_breakdown", [])
-        )
-        return (
-            f"Gross revenue is €{facts['annual_gross_eur']:,.0f}; after costs the net to "
-            f"the owner is €{facts['annual_net_eur']:,.0f}. The annual cost lines are: "
-            f"{lines or 'n/a'}. These come from the finance engine (platform fee, "
-            f"cleaning, tourist tax, management, maintenance, insurance, accounting and "
-            f"income tax) applied to your property's revenue and value."
-        )
-    if any(k in m for k in ("sell", "sale", "should i")):
-        return (
-            f"Indicative sale value is €{s['sale_price_eur']:,.0f} "
-            f"(€{s['sale_price_per_m2_eur']:,.0f}/m²); break-even against projected "
-            f"Airbnb net income is {facts['break_even_years']} years. The model's call "
-            f"is **{facts['recommendation'].upper()}** "
-            f"(P(Airbnb beats Sell) = {facts['confidence'].get('p_airbnb_gt_sell')})."
-        )
-    if any(k in m for k in ("occupancy", "booked", "nights")):
-        return (
-            f"Projected occupancy is {s['occupancy_rate_annual'] * 100:.0f}% "
-            f"({s['nights_booked_year']} nights/year), from a LightGBM model trained on "
-            f"Inside Airbnb calendar availability (booked nights) for comparable listings."
-        )
-    if any(k in m for k in ("price", "nightly", "rate")):
-        return (
-            f"Projected nightly rate is €{facts['nightly_price_eur']:.0f}/night, from the "
-            f"LightGBM price model. Top drivers: "
-            f"{', '.join(d['feature'] for d in facts['drivers'][:3])}."
-        )
-    if any(k in m for k in ("revenue", "income", "earn", "profit", "yield")):
-        return (
-            f"Estimated net annual revenue is €{facts['annual_net_eur']:,.0f} "
-            f"(P10-P90: €{facts['p10_eur']:,.0f}-€{facts['p90_eur']:,.0f}); gross is "
-            f"€{facts['annual_gross_eur']:,.0f}, the difference being platform, "
-            f"management, cleaning, tax and other costs."
-        )
-    # "why" / generic decision
-    return (
-        f"The recommendation is **{facts['recommendation'].upper()}** "
-        f"(P(Airbnb beats Sell) = {facts['confidence'].get('p_airbnb_gt_sell')}). "
-        f"Nightly rate €{facts['nightly_price_eur']:.0f}, net revenue "
-        f"€{facts['annual_net_eur']:,.0f}/yr, break-even {facts['break_even_years']} years. "
-        f"Strongest price drivers: {', '.join(d['feature'] for d in facts['drivers'][:3])}."
-    )
+    agent = MarketAnalystAgent(use_llm=bool(state.get("use_llm") and _has_key()))
+    return {
+        "answer": agent.answer_market(state.get("message", ""), facts, comparables),
+        "sources": ["Market Analysis — peer positioning (comparables benchmark) + LightGBM price model"],
+        "meta": {"positioning": market_positioning(facts, comparables)},
+    }
 
 
 def _financial_node(state: ChatState) -> dict:
@@ -451,6 +376,7 @@ def _graph():
     g.add_node("decision", _market_node)
     g.add_node("regulatory", _regulatory_node)
     g.add_node("comparables", _comparables_node)
+    g.add_node("market", _market_positioning_node)
     g.add_node("optimisation", _optimisation_node)
     g.add_node("general", _general_node)
     g.add_node("govern", _govern_node)
