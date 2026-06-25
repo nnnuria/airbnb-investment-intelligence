@@ -32,5 +32,5 @@ _PROPERTY_FIELDS = {f.name for f in fields(Property)}
 def scenario(req: ScenarioRequest) -> ScenarioResponse:
     """Run the full decision engine for one property."""
     spec = {k: v for k, v in req.model_dump().items() if k in _PROPERTY_FIELDS}
-    result = compute_scenario(Property(**spec))
+    result = compute_scenario(Property(**spec), managed=req.managed)
     return ScenarioResponse(**asdict(result))
