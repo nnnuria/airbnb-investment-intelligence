@@ -47,8 +47,8 @@ City-specific outliers removed during EDA: implausible records such as `beds = 4
 | Málaga | €102 | 89% | Most "whole-property" market — clearest Airbnb-vs-sell comparison |
 
 - **Málaga is the cleanest test case for the decision flow:** 89% entire homes means most listings have a direct sale comparison. Madrid and Barcelona carry a larger private-room segment (~27–30%), which is less comparable to a sale.
-- **Price is strongly right-skewed** in all three cities (raw skewness ≈ 3.0 for Madrid/Barcelona; Málaga much higher at ~12, driven by luxury/coastal outliers). This is why all price modelling uses a **`log1p(price)`** target.
-- **Commercial operators dominate:** 52–63% of listings per city are run by hosts with 6+ listings — relevant to the "professional vs peer-to-peer" framing.
+- **Price is strongly right-skewed** in all three cities (raw skewness ≈ 3.2 Madrid / 3.8 Barcelona; Málaga much higher at ≈ 9.5, driven by luxury/coastal outliers). This is why all price modelling uses a **`log1p(price)`** target.
+- **Commercial operators dominate:** ≈ 52–60% of listings per city are run by hosts with 6+ listings (`calculated_host_listings_count`) — relevant to the "professional vs peer-to-peer" framing.
 
 > *Barcelona median (resolved):* Barcelona is part of the **2025-09-14** snapshot (per `config/config.yaml` and the listings' `last_scraped`), the same as Madrid. Its cleaned median nightly price (`Data/processed/listings_all_cities.parquet`, 15,199 listings) is **€130**. The **~€111** quoted earlier was the **all-cities pooled** median, not Barcelona's. **Use €130** as Barcelona's headline median everywhere (report, deck).
 
