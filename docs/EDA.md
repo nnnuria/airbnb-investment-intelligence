@@ -106,13 +106,9 @@ A multilingual pipeline (`notebooks/*/03_sentiment.ipynb`) scores per-listing re
 
 **Scrape-date artefact:** because the calendar is forward-looking from one scrape date, the next ~2–4 weeks are already booked and read as "unavailable" regardless of season. Measured for Madrid: 0–2 days ahead shows 85.8% booked vs. 58.8% at 6–12 months. **Fix:** exclude dates within 60 days of the snapshot before computing multipliers.
 
-### Corrected monthly seasonality (availability-derived)
+### Monthly seasonality
 
-| | Madrid | Barcelona | Málaga |
-|---|---:|---:|---:|
-| Peak month | **Oct (~1.27)** | Oct (~1.19) | Oct (~1.19) |
-| Trough | Feb (~0.88) | Dec (~0.73) | Dec (~0.69) |
-| Character | Flat year-round (city/conference tourism) | Moderate swing | **Most seasonal** (Nov ≈ half of Oct) |
+Per-city monthly multipliers are produced by `src/airbnb_iip/features/seasonality.py` (availability-based, 60-day scrape-artefact exclusion, normalised to an annual mean of 1.0). **Specific monthly multiplier values are not reported here:** from a single forward snapshot they are dominated by the scrape-date booking horizon and are not stable enough across cities/snapshots to quote as fixed figures — see the discrepancy below.
 
 > ⚠️ **Open discrepancy to resolve.** The repo's availability-derived seasonality, the demo's hardcoded seasonality (`mocks.py`), and the external AirROI report **disagree on the summer**. AirROI reports Madrid's **peak in April and trough in August**; the availability method reads August as *high demand* — likely because residents leave in August, so low *supply availability* is misread as high *tourist demand*. This matters for the occupancy model and should be called out explicitly in the deck rather than smoothed over.
 
