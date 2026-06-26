@@ -17,7 +17,7 @@ The EDA underpins the platform's core decision — **"keep as an Airbnb or sell?
 | Idealista sales | Apify scraper (`scripts/scrape_idealista.py`) | Sell-side price model (the sell scenario anchor) |
 | Regulatory corpus | Official municipal/regional STR rules | Regulatory RAG agent (risk flag) |
 
-Cities: **Madrid · Barcelona · Málaga.** Snapshot reference date: **14 Sep 2025** (`config/config.yaml`; Málaga scraped 30 Sep). All three cities use this September-2025 snapshot — an earlier empty-price Barcelona snapshot was superseded when the cities were re-pulled.
+Cities: **Madrid · Barcelona · Málaga.** Snapshot reference date: **14 Sep 2025** (`config/config.yaml`; Málaga scraped 30 Sep). The committed data uses this September-2025 snapshot; an earlier Barcelona snapshot recorded in `DATA_FINDINGS.md` is superseded.
 
 ---
 
@@ -132,7 +132,7 @@ Source: `notebooks/sell_price_eda.ipynb`, from the scraped Idealista sale listin
 | corr(log size, log price) | 0.75–0.80 |
 | **Model-ready split (committed)** | **11,774 train / 2,944 test** (`models/sale_feature_cols.json`) |
 
-> The raw/clean/per-city counts above are the EDA stage; the **committed sell model** is trained on **11,774 / 2,944** rows after its stricter price/size/€-per-m² filters — that split (and R² 0.868 / MAE €47,272 / MAPE 13.9%) is the authoritative figure.
+> The raw/clean/per-city counts above are the EDA stage; the **committed sell model** is trained on **11,774 train / 2,944 test** rows (the model-ready split per `models/sale_feature_cols.json`) — that split (and R² 0.868 / MAE €47,272 / MAPE 13.9%) is the authoritative figure.
 
 **Key modelling insight:** price does **not** scale linearly with size — larger flats have lower €/m². This is why the sell model predicts **total price with size as a feature**, rather than the naïve `€/m² × size`. District-level €/m² ordering matches local knowledge (central/coastal districts highest), confirming the sell-side anchor is sound. `price_per_m2` (= price ÷ size) is used for EDA intuition only and is **excluded from the model as a leakage trap**.
 
