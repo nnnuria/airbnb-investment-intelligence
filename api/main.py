@@ -8,7 +8,8 @@ Docs:
 Endpoint status (all LIVE):
     /predict_price, /explain_price, /estimate_occupancy, /estimate_revenue,
     /airbnb_vs_sell, /scenario (full decision engine), /optimise,
-    /comparables, /regulatory_risk, /chat (LangGraph coordinator)
+    /comparables, /regulatory_risk, /chat (LangGraph coordinator),
+    /saved (CRUD persistence), /sentiment (precomputed review sentiment)
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import agents, optimise, predict, revenue, scenario
+from api.routers import agents, optimise, predict, revenue, saved, scenario, sentiment
 from api.schemas import HealthResponse
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,8 @@ app.include_router(revenue.router)
 app.include_router(scenario.router)
 app.include_router(agents.router)
 app.include_router(optimise.router)
+app.include_router(saved.router)
+app.include_router(sentiment.router)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["meta"])

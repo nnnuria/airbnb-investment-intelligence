@@ -46,6 +46,10 @@ DISPLAY_COLUMNS: tuple[str, ...] = (
     "price",
     "estimated_revenue_l365d",
     "review_scores_rating",
+    "picture_url",
+    "latitude",
+    "longitude",
+    "review_scores_{cleanliness,location,value,accuracy}",
 )
 
 MIN_CANDIDATES = 5  # below this, progressively relax structured filters
