@@ -130,6 +130,9 @@ Source: `notebooks/sell_price_eda.ipynb`, from the scraped Idealista sale listin
 | Field coverage (price, size, rooms, district, lat/lon) | ~100% |
 | Floor / exterior / lift coverage | ~85% |
 | corr(log size, log price) | 0.75–0.80 |
+| **Model-ready split (committed)** | **11,774 train / 2,944 test** (`models/sale_feature_cols.json`) |
+
+> The raw/clean/per-city counts above are the EDA stage; the **committed sell model** is trained on **11,774 / 2,944** rows after its stricter price/size/€-per-m² filters — that split (and R² 0.868 / MAE €47,272 / MAPE 13.9%) is the authoritative figure.
 
 **Key modelling insight:** price does **not** scale linearly with size — larger flats have lower €/m². This is why the sell model predicts **total price with size as a feature**, rather than the naïve `€/m² × size`. District-level €/m² ordering matches local knowledge (central/coastal districts highest), confirming the sell-side anchor is sound. `price_per_m2` (= price ÷ size) is used for EDA intuition only and is **excluded from the model as a leakage trap**.
 

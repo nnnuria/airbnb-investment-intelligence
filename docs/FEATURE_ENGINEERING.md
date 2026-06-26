@@ -165,7 +165,7 @@ The ABT's `estimated_occupancy_l365d` column is now filled from forward availabi
 
 **District-level imputation** (`models/sale_district_defaults.json`, built by `scripts/make_sale_district_defaults.py`): a sparse `(city, district, size)` query is enriched with district-median lat/lon and the modal neighbourhood so location signal isn't washed out. Size-correlated counts (rooms/bathrooms/floor) are *not* imputed from district mode (would fight a user-supplied size).
 
-**Performance (LightGBM):** MAE ≈ €48.5k, MAPE ≈ 14%, R² ≈ 0.86; per-district predicted €/m² correlates ≥0.97 with actuals.
+**Performance (LightGBM):** R² **0.868**, MAE **€47,272**, MAPE **13.9%** (held-out test n=2,944; train n=11,774 — per `models/sale_feature_cols.json` and `docs/model_cards/sale_model.md`); per-district predicted €/m² correlates ≥0.97 with actuals.
 
 ---
 
