@@ -14,8 +14,8 @@ Verified by executing `notebooks/segmentation.ipynb` end-to-end on the real data
 ## `data_segmentation_eda.ipynb` (#2A) — additive, no computation changed
 1. **Justified the 500-record threshold** in the intro (why 500 → stable train/val/test split).
 2. **§7 Segment-level feasibility** — reads `listings_segmented.parquet`; all 5 market segments clear 500, so segment-aware modelling is viable (unlike property-type).
-3. **§8 Empirical check** — cites the combined price model's per-city R² (0.797 / 0.819 / 0.752) as evidence city-splitting is feasible but *unnecessary*.
-4. **§9 Conclusion & recommendation** — the written verdict the notebook was missing: **one combined model with `city` (+ `Segment_Name`) as features; do not split by property type; #2B to confirm empirically.**
+3. **§8 Empirical check** — cites the pooled price model's per-city R² (0.797 / 0.819 / 0.752); the #2B empirical check subsequently **selected the by-city models** (R² 0.814 vs 0.810 pooled).
+4. **§9 Conclusion & recommendation** — the written verdict the notebook was missing: **#2B selected city-specific price models (R² 0.814 vs 0.810 pooled) as production; segments (`Segment_Name`) kept as a benchmarking feature; do not split by property type.**
 
 ## `segmentation.ipynb` — method fix + reproducibility
 1. **Method fix (Phase 8):** added `PROTECTED_FEATURES` (location, capacity/structure, quality, listing type) that the CV-based elimination **never drops**. The prior run dropped `is_central`/`is_madrid`/`is_barcelona` and kept low-signal amenity flags (`has_hangers`, `has_hair_dryer`, …) — so segments ignored location, the #1 price driver. Now segments stay aligned with what moves price/occupancy.

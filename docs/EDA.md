@@ -142,11 +142,11 @@ Source: `notebooks/sell_price_eda.ipynb`, from the scraped Idealista sale listin
 
 | Split dimension | Viable slices | Verdict |
 |---|---|---|
-| By city | 3 / 3 (Madrid 18,862 · Barcelona 15,199 · Málaga 8,762) | Feasible, but **unnecessary** — per-city R² under the combined model is already strong (0.797 / 0.819 / 0.752) |
+| By city | 3 / 3 (Madrid 18,862 · Barcelona 15,199 · Málaga 8,762) | **Selected** after the #2B empirical check — by-city R² 0.814 vs 0.810 pooled (pooled per-city R²: 0.797 / 0.819 / 0.752) |
 | By city × property type | 6 / 18 (only Entire-place & Private-room clear 500) | **No** — 12 slices too small; pool into the combined model |
 | By market segment | 4 / 4 (all ≥500) | Use the segment as a **feature**, not a model router |
 
-**Conclusion:** one combined model with `city` as a feature (current design); do not split by property type; #2B (Nicklas) to confirm empirically that city-splitting isn't worthwhile.
+**Conclusion (updated after #2B):** the empirical check selected **city-specific** price models (by-city R² 0.814 vs 0.810 pooled), now the production design; do not split by property type.
 
 ### 8.2 Market segments (K-means clustering) — executed end-to-end
 `notebooks/segmentation.ipynb` (method: `docs/cluster_analysis_method.md`) clusters listings on *attributes only*, writing `Segment_Name` to `Data/processed/listings_segmented.parquet`. **The notebook was run end-to-end on the real data with no errors; the numbers below are its actual output**, not estimates.
@@ -192,7 +192,7 @@ Plus a **national registration number (NRA)** required since 2 Jan 2025 (RD 1312
 4. **Seasonality is genuinely uncertain in summer** — internal signals and the external benchmark disagree on August. A documented limitation, not a bug.
 5. **Sale price is non-linear in size** — model total price, not €/m² × size.
 6. **Regulation can override the numbers** — the most defensible, KPMG-aligned insight in the analysis.
-7. **Splitting the data isn't warranted** — by city it's feasible but unnecessary (strong per-city R²); by property type only 6/18 slices are large enough. One combined model with `city` + market `segment` as features is the right design (§8).
+7. **Splitting by city was selected (#2B):** by-city LightGBM won the empirical comparison (R² 0.814 vs 0.810 pooled) and is the production design; splitting by **property type** is not warranted (only 6/18 slices large enough).
 
 ---
 
