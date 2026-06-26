@@ -14,17 +14,18 @@ and `src/airbnb_iip/models/nlp.py`.
 | City | Listings | Calendar span | Availability rate | Price column |
 |------|---------:|---------------|------------------:|--------------|
 | Madrid    | 25,000 | 14 Sep 2025 → 14 Sep 2026 | 46% | empty |
-| Barcelona | 18,177 | 14 Sep 2025 → 14 Sep 2026 | 57% | empty |
+| Barcelona *(superseded)* | 18,177 | 14 Dec 2025 → 14 Dec 2026 | 57% | empty |
 | Málaga    |  9,714 | 30 Sep 2025 → 29 Sep 2026 | 57% | empty |
 
 - **Availability** is fully populated and usable — it's the occupancy/seasonality signal. Madrid has the lowest availability (46% available = highest booked share).
 - **⚠️ `price` is 100% empty in every calendar** (~19M rows). Expected Inside Airbnb behaviour, not a
   download error. Nightly price must come from `listings.csv`. (Consistent with the SF occupancy
   model, which already infers bookings from review frequency rather than calendar price.)
-- **Seasonality caveat:** the three snapshots are now within ~2 weeks (Madrid/Barcelona 14 Sep,
-  Málaga 30 Sep 2025), so cross-city comparison is reasonable; the occupancy model additionally
-  uses an equal 120-day per-city window for full comparability. Treat single-snapshot seasonality
-  as indicative.
+- **Committed snapshot = September 2025.** The Barcelona row above is a *superseded* earlier
+  snapshot (see the Section 2 note); the committed/modelled data is the September re-pull —
+  Madrid/Barcelona 14 Sep, Málaga 30 Sep 2025 — so cross-city comparison is on a near-common date,
+  and the occupancy model additionally uses an equal 120-day per-city window. Treat single-snapshot
+  seasonality as indicative.
 
 ## Section 2 — Listings (price & supply)
 
@@ -38,7 +39,7 @@ and `src/airbnb_iip/models/nlp.py`.
   Airbnb-vs-sell decision framing, where entire-home listings have the clearest comparison to
   a sale. Madrid and Barcelona have a larger private-room segment (~33–38%).
 - **Cleaned-ABT figures (use these downstream).** The table above reports the **raw** snapshots (pre-cleaning). After cleaning (`Data/processed/listings_all_cities.parquet`, 42,823 listings; 15,199 in Barcelona), the figures the report and deck should quote are: median nightly price **Madrid €110 / Barcelona €130 / Málaga €102**, and entire-home share **72% / 69% / 89%**. (The Barcelona €143 / 62% in the Section 2 table are from a **superseded** pre-re-pull snapshot — see the note below.)
-- **Barcelona snapshot (resolved).** The Barcelona data in use is the **2025-09-14** Inside Airbnb snapshot — same as Madrid — per `config/config.yaml` (`snapshot_date`) and the `last_scraped` field in `Data/processed/listings_all_cities.parquet` (14–15 Sep 2025). Price is populated; cleaned median **€130**. *Superseded:* earlier text describing a 14 Dec 2025 empty-price original / 12 Jun 2025 €143 replacement predates the September re-pull and is no longer accurate.
+- **Barcelona snapshot (resolved).** Barcelona went through three snapshots: **Dec 2025** (18,177, empty price) → **Jun 2025** (18,927, €143) → the final **Sep 2025 re-pull**, which is the committed/modelled data — `last_scraped` 14–15 Sep 2025 in `Data/processed/listings_all_cities.parquet` (same as Madrid; `config/config.yaml` `snapshot_date 2025-09-14`), price populated, **15,199 cleaned listings, median €130**. The Dec/Jun rows above are superseded; the **raw count of the September Barcelona snapshot is not in the local files**, so only the cleaned count (15,199) is data-backed.
 
 ## Section 3 — Sentiment (review analysis, optimisation flow)
 
