@@ -36,6 +36,7 @@ and `src/airbnb_iip/models/nlp.py`.
 - Málaga is the most "whole-property" market (88% entire homes) — most relevant for the
   Airbnb-vs-sell decision framing, where entire-home listings have the clearest comparison to
   a sale. Madrid and Barcelona have a larger private-room segment (~33–38%).
+- **Cleaned-ABT figures (use these downstream).** The table above reports the **raw** snapshots (pre-cleaning). After cleaning (`Data/processed/listings_all_cities.parquet`, 42,823 listings; 15,199 in Barcelona), the figures the report and deck should quote are: median nightly price **Madrid €110 / Barcelona €130 / Málaga €102**, and entire-home share **72% / 69% / 89%**. (The raw Barcelona €143 / 62% are the pre-cleaning replacement-snapshot values.)
 - **✅ Barcelona pricing RESOLVED.** The original BCN snapshot (14 Dec 2025) had an empty price
   column in both calendar and listings. Replaced with a different Inside Airbnb BCN snapshot
   (12 Jun 2025) where price is ~79% populated (median €143) — same source, real
