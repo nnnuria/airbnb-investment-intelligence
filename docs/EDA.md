@@ -146,7 +146,7 @@ Source: `notebooks/sell_price_eda.ipynb`, from the scraped Idealista sale listin
 | By city × property type | 6 / 18 (only Entire-place & Private-room clear 500) | **No** — 12 slices too small; pool into the combined model |
 | By market segment | 4 / 4 (all ≥500) | Use the segment as a **feature**, not a model router |
 
-**Conclusion (updated after #2B):** the empirical check selected **city-specific** price models (by-city R² 0.814 vs 0.810 pooled), now the production design; do not split by property type.
+**Conclusion (updated after #2B):** the empirical check selected **city-specific** price models (by-city R² 0.814 vs 0.810 pooled); they serve the decision engine's scenario / NPV / recommendation path (the pooled model still backs the standalone `/predict_price` endpoints). Do not split by property type.
 
 ### 8.2 Market segments (K-means clustering) — executed end-to-end
 `notebooks/segmentation.ipynb` (method: `docs/cluster_analysis_method.md`) clusters listings on *attributes only*, writing `Segment_Name` to `Data/processed/listings_segmented.parquet`. **The notebook was run end-to-end on the real data with no errors; the numbers below are its actual output**, not estimates.
@@ -192,7 +192,7 @@ Plus a **national registration number (NRA)** required since 2 Jan 2025 (RD 1312
 4. **Seasonality is genuinely uncertain in summer** — internal signals and the external benchmark disagree on August. A documented limitation, not a bug.
 5. **Sale price is non-linear in size** — model total price, not €/m² × size.
 6. **Regulation can override the numbers** — the most defensible, KPMG-aligned insight in the analysis.
-7. **Splitting by city was selected (#2B):** by-city LightGBM won the empirical comparison (R² 0.814 vs 0.810 pooled) and is the production design; splitting by **property type** is not warranted (only 6/18 slices large enough).
+7. **Splitting by city was selected (#2B):** by-city LightGBM won the empirical comparison (R² 0.814 vs 0.810 pooled) and serves the decision engine; splitting by **property type** is not warranted (only 6/18 slices large enough).
 
 ---
 
