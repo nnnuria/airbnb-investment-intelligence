@@ -22,9 +22,9 @@ and `src/airbnb_iip/models/nlp.py`.
   download error. Nightly price must come from `listings.csv`. (Consistent with the SF occupancy
   model, which already infers bookings from review frequency rather than calendar price.)
 - **Committed snapshot = September 2025.** The Barcelona row above is a *superseded* earlier
-  snapshot (see the Section 2 note); the committed/modelled data is the September re-pull —
-  Madrid/Barcelona 14 Sep, Málaga 30 Sep 2025 — so cross-city comparison is on a near-common date,
-  and the occupancy model additionally uses an equal 120-day per-city window. Treat single-snapshot
+  snapshot (see the Section 2 note); the committed/modelled data is the September snapshot —
+  `last_scraped` Madrid/Barcelona 14 Sep, Málaga 30 Sep 2025 in the committed parquet — and the
+  occupancy model additionally uses an equal 120-day per-city window. Treat single-snapshot
   seasonality as indicative.
 
 ## Section 2 — Listings (price & supply)
@@ -38,8 +38,8 @@ and `src/airbnb_iip/models/nlp.py`.
 - Málaga is the most "whole-property" market (88% entire homes) — most relevant for the
   Airbnb-vs-sell decision framing, where entire-home listings have the clearest comparison to
   a sale. Madrid and Barcelona have a larger private-room segment (~33–38%).
-- **Cleaned-ABT figures (use these downstream).** The table above reports the **raw** snapshots (pre-cleaning). After cleaning (`Data/processed/listings_all_cities.parquet`, 42,823 listings; 15,199 in Barcelona), the figures the report and deck should quote are: median nightly price **Madrid €110 / Barcelona €130 / Málaga €102**, and entire-home share **72% / 69% / 89%**. (The Barcelona €143 / 62% in the Section 2 table are from a **superseded** pre-re-pull snapshot — see the note below.)
-- **Barcelona snapshot (resolved).** Barcelona went through three snapshots: **Dec 2025** (18,177, empty price) → **Jun 2025** (18,927, €143) → the final **Sep 2025 re-pull**, which is the committed/modelled data — `last_scraped` 14–15 Sep 2025 in `Data/processed/listings_all_cities.parquet` (same as Madrid; `config/config.yaml` `snapshot_date 2025-09-14`), price populated, **15,199 cleaned listings, median €130**. The Dec/Jun rows above are superseded; the **raw count of the September Barcelona snapshot is not recorded in the committed repo** (`Data/raw/` is not tracked), so only the cleaned count (15,199, from the committed `Data/processed/listings_all_cities.parquet`) is data-backed.
+- **Cleaned-ABT figures (use these downstream).** The table above reports the **raw** snapshots (pre-cleaning). After cleaning (`Data/processed/listings_all_cities.parquet`, 42,823 listings; 15,199 in Barcelona), the figures the report and deck should quote are: median nightly price **Madrid €110 / Barcelona €130 / Málaga €102**, and entire-home share **72% / 69% / 89%**. (The Barcelona €143 / 62% in the Section 2 table are from a **superseded** earlier snapshot — see the note below.)
+- **Barcelona snapshot (resolved).** The committed/modelled Barcelona data is the **September 2025** snapshot — `last_scraped` 14–15 Sep 2025 in `Data/processed/listings_all_cities.parquet` (same as Madrid; `config/config.yaml` `snapshot_date 2025-09-14`), price populated, **15,199 cleaned listings, median €130**. Earlier Barcelona snapshots recorded in this doc — **Dec 2025** (18,177, empty price) and **Jun 2025** (18,927, €143) — are superseded. The **raw count of the September snapshot is not recorded in the committed repo** (`Data/raw/` is not tracked), so only the cleaned count (15,199) is data-backed.
 
 ## Section 3 — Sentiment (review analysis, optimisation flow)
 
@@ -83,15 +83,15 @@ validation metric. Natural v2 upgrade: a multilingual transformer benchmarked ag
    `data/processed/<city>_sentiment.parquet` on `listing_id` and let the model weigh it directly.
    In the optimisation flow, sentiment aspect scores (cleanliness, location, wifi, host) also
    surface targeted improvement recommendations.
-3. **Barcelona pricing is resolved — proceed with BCN in price-based outputs.** The empty-price
-   issue affected an earlier Barcelona snapshot; the cities were re-pulled and Barcelona now uses
-   the 2025-09-14 snapshot with price populated. No imputation or de-scoping needed.
-4. **Snapshots are now aligned (done).** All three cities were re-pulled to September 2025
-   (Madrid/Barcelona 14 Sep, Málaga 30 Sep), so cross-city comparisons are on a near-common date.
+3. **Barcelona pricing is resolved — proceed with BCN in price-based outputs.** The committed
+   Barcelona data is the 2025-09-14 snapshot with price populated (cleaned median €130); the
+   earlier empty-price / €143 Barcelona snapshots are superseded. No imputation or de-scoping needed.
+4. **Snapshot dates (committed).** The committed snapshots are Madrid/Barcelona 14 Sep and
+   Málaga 30 Sep 2025 (within ~2 weeks).
 
 ## Status summary
 
 - ✅ **Availability + seasonality** ready for occupancy modelling (all 3 cities).
 - ✅ **Sentiment feature** ready to merge into the ABT (all 3 cities).
 - ✅ **Barcelona price** — RESOLVED; Barcelona uses the 2025-09-14 snapshot (price populated, cleaned median €130). All cities priced.
-- ✅ **Snapshot alignment** — all three cities re-pulled to September 2025 (Madrid/Barcelona 14 Sep, Málaga 30 Sep).
+- ✅ **Snapshot dates** — committed snapshots are all September 2025 (Madrid/Barcelona 14 Sep, Málaga 30 Sep).
