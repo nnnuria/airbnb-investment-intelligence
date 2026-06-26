@@ -110,10 +110,9 @@ pip install -e .
 
 # 3. Configure secrets
 cp .env.example .env        # add GOOGLE_API_KEY (Gemini) and APIFY_API_TOKEN
+```
 
-For React UI
-
-# Project Setup
+# Project Setup For React UI
 
 ## Prerequisites
 
