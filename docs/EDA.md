@@ -143,7 +143,7 @@ Source: `notebooks/sell_price_eda.ipynb`, from the scraped Idealista sale listin
 | Split dimension | Viable slices | Verdict |
 |---|---|---|
 | By city | 3 / 3 (Madrid 18,862 · Barcelona 15,199 · Málaga 8,762) | **Selected** after the #2B empirical check — by-city R² 0.814 vs 0.810 pooled (pooled per-city R²: 0.797 / 0.819 / 0.752) |
-| By city × property type | 6 / 18 (only Entire-place & Private-room clear 500) | **No** — 12 slices too small; pool into the combined model |
+| By city × property type | 6 / 18 (only Entire-place & Private-room clear 500) | **No** — 12 slices too small; do not split by property type |
 | By market segment | 4 / 4 (all ≥500) | Use the segment as a **feature**, not a model router |
 
 **Conclusion (updated after #2B):** the empirical check selected **city-specific** price models (by-city R² 0.814 vs 0.810 pooled); they serve the decision engine's scenario / NPV / recommendation path (the pooled model still backs the standalone `/predict_price` endpoints). Do not split by property type.
