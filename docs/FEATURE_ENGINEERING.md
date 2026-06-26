@@ -147,9 +147,9 @@ The ABT's `estimated_occupancy_l365d` column is now filled from forward availabi
 
 > ⚠️ **Reproducibility flag for the team:** the shipped artifact `price_best_model.pkl` is a verified **LightGBM** model (and the docs report a LightGBM/XGBoost comparison table — LightGBM Test R² 0.803). However, the committed generator `scripts/make_price_notebook.py` trains **HistGradientBoosting** (labelled "XGBoost-equivalent"), not LightGBM/XGBoost. The generator is therefore **stale** — re-running it will not reproduce the shipped model or the documented numbers. Document the artifact as LightGBM; the generator needs updating. (The *sell*-model generator is consistent.)
 
-**Per-city price performance (LightGBM):** Madrid R² 0.797 · Barcelona 0.819 · Málaga 0.752.
+**Per-city breakdown of the pooled model (LightGBM):** Madrid R² 0.797 · Barcelona 0.819 · Málaga 0.752.
 
-**One combined model, not per-city** (rationale on record): Málaga is too small to train independently; feature effects are directionally consistent across cities (only magnitudes differ — handled by `city` as a feature + tree splits); neighbourhood encoding gives local granularity; SHAP can be filtered per city post-hoc.
+**Production model: city-specific (by-city).** A pooled model was compared against three city-specific LightGBM models on the same hold-out (the #2B empirical check); the by-city set was **selected** — Test R² **0.814** vs 0.810 pooled (RMSE €68.5, MAE €30.8). The by-city models (`CityPricePredictor`, `models/price_city_{madrid,barcelona,malaga}_model.pkl`) serve the **decision engine** — scenario, NPV, and the Airbnb-vs-sell recommendation (`engine.py` via `get_city_price_predictor()`). The pooled `PricePredictor` (`price_best_model.pkl`) still backs the standalone `/predict_price`, `/explain_price`, and `/estimate_revenue` endpoints (`api/dependencies.py` → `get_price_predictor()`).
 
 ---
 

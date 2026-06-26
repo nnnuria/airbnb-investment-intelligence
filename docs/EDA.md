@@ -42,15 +42,15 @@ City-specific outliers removed during EDA: implausible records such as `beds = 4
 
 | City | Median nightly price | Entire-home share | Notes |
 |---|---:|---:|---|
-| Madrid | €110 | 67% | Largest, deepest market; lowest availability (highest booked share) |
-| Barcelona | €143* | 62% | *DATA_FINDINGS table; cleaned-data median is ~€111 — see note below |
-| Málaga | €102 | 88% | Most "whole-property" market — clearest Airbnb-vs-sell comparison |
+| Madrid | €110 | 72% | Largest, deepest market; lowest availability (highest booked share) |
+| Barcelona | €130 | 69% | Cleaned-ABT median; the raw replacement snapshot reads €143 — see note below |
+| Málaga | €102 | 89% | Most "whole-property" market — clearest Airbnb-vs-sell comparison |
 
-- **Málaga is the cleanest test case for the decision flow:** 88% entire homes means most listings have a direct sale comparison. Madrid and Barcelona carry a larger private-room segment (~33–38%), which is less comparable to a sale.
+- **Málaga is the cleanest test case for the decision flow:** 89% entire homes means most listings have a direct sale comparison. Madrid and Barcelona carry a larger private-room segment (~27–30%), which is less comparable to a sale.
 - **Price is strongly right-skewed** in all three cities (raw skewness ≈ 3.0 for Madrid/Barcelona; Málaga much higher at ~12, driven by luxury/coastal outliers). This is why all price modelling uses a **`log1p(price)`** target.
 - **Commercial operators dominate:** 52–63% of listings per city are run by hosts with 6+ listings — relevant to the "professional vs peer-to-peer" framing.
 
-> *Barcelona price discrepancy:* the DATA_FINDINGS table lists €143 (from the price-populated replacement snapshot at the listings level), while the cleaned per-city notebook reports a ~€111 median. Both come from the same source; the gap is a snapshot/cleaning artefact. **Flag for the team to reconcile before the deck** — the headline Barcelona median should be stated consistently.
+> *Barcelona median (resolved):* the cleaned analysis dataset (`Data/processed/listings_all_cities.parquet`, 15,199 Barcelona listings) has a **median nightly price of €130**. The €143 figure in `DATA_FINDINGS.md` is the **raw replacement-snapshot** median (pre-cleaning, listings level); the **~€111** quoted earlier was the **all-cities pooled** median, not Barcelona's. **Use €130** as Barcelona's headline median everywhere (report, deck).
 
 ---
 
@@ -142,11 +142,11 @@ Source: `notebooks/sell_price_eda.ipynb`, from the scraped Idealista sale listin
 
 | Split dimension | Viable slices | Verdict |
 |---|---|---|
-| By city | 3 / 3 (Madrid 18,862 · Barcelona 15,199 · Málaga 8,762) | Feasible, but **unnecessary** — per-city R² under the combined model is already strong (0.797 / 0.819 / 0.752) |
-| By city × property type | 6 / 18 (only Entire-place & Private-room clear 500) | **No** — 12 slices too small; pool into the combined model |
+| By city | 3 / 3 (Madrid 18,862 · Barcelona 15,199 · Málaga 8,762) | **Selected** after the #2B empirical check — by-city R² 0.814 vs 0.810 pooled (pooled per-city R²: 0.797 / 0.819 / 0.752) |
+| By city × property type | 6 / 18 (only Entire-place & Private-room clear 500) | **No** — 12 slices too small; do not split by property type |
 | By market segment | 4 / 4 (all ≥500) | Use the segment as a **feature**, not a model router |
 
-**Conclusion:** one combined model with `city` as a feature (current design); do not split by property type; #2B (Nicklas) to confirm empirically that city-splitting isn't worthwhile.
+**Conclusion (updated after #2B):** the empirical check selected **city-specific** price models (by-city R² 0.814 vs 0.810 pooled); they serve the decision engine's scenario / NPV / recommendation path (the pooled model still backs the standalone `/predict_price` endpoints). Do not split by property type.
 
 ### 8.2 Market segments (K-means clustering) — executed end-to-end
 `notebooks/segmentation.ipynb` (method: `docs/cluster_analysis_method.md`) clusters listings on *attributes only*, writing `Segment_Name` to `Data/processed/listings_segmented.parquet`. **The notebook was run end-to-end on the real data with no errors; the numbers below are its actual output**, not estimates.
@@ -192,14 +192,14 @@ Plus a **national registration number (NRA)** required since 2 Jan 2025 (RD 1312
 4. **Seasonality is genuinely uncertain in summer** — internal signals and the external benchmark disagree on August. A documented limitation, not a bug.
 5. **Sale price is non-linear in size** — model total price, not €/m² × size.
 6. **Regulation can override the numbers** — the most defensible, KPMG-aligned insight in the analysis.
-7. **Splitting the data isn't warranted** — by city it's feasible but unnecessary (strong per-city R²); by property type only 6/18 slices are large enough. One combined model with `city` + market `segment` as features is the right design (§8).
+7. **Splitting by city was selected (#2B):** by-city LightGBM won the empirical comparison (R² 0.814 vs 0.810 pooled) and serves the decision engine; splitting by **property type** is not warranted (only 6/18 slices large enough).
 
 ---
 
 ## 11. Known limitations & data caveats
 
 - **Snapshot misalignment:** the three cities were scraped on different dates, so cross-city month-vs-month seasonality comparisons are only indicative until re-pulled on a common date.
-- **Barcelona median price** is reported inconsistently between DATA_FINDINGS (€143) and the cleaned notebook (~€111) — reconcile before the deck (§3).
+- **Barcelona median price (resolved):** cleaned-ABT median is **€130**; €143 is the raw replacement snapshot and €111 was the pooled all-cities median. Use **€130** downstream.
 - **Sentiment labels are weak** (lexicon-generated); trust the 0.23–0.29 rating correlation, not the 0.94 training accuracy.
 - **Málaga has a missing column** (`neighbourhood_group_cleansed` is all-null), which breaks one crosstab in `malaga/02_analysis.ipynb`.
 - **Summer seasonality** conflict (§6) is unresolved.
