@@ -407,6 +407,48 @@ class MarketReportResponse(BaseModel):
     disclaimer: str = "Indicative only — not financial advice."
 
 
+# ── /saved ─────────────────────────────────────────────────────────────────────
+
+class SavedCreateRequest(BaseModel):
+    """A property + its computed scenario to persist. Both are stored as-is."""
+
+    property: dict
+    scenario: dict
+    nickname: Optional[str] = None
+
+
+class SavedRecord(BaseModel):
+    id: str
+    saved_at: str
+    nickname: Optional[str] = None
+    property: dict = Field(default_factory=dict)
+    scenario: dict = Field(default_factory=dict)
+
+
+# ── /sentiment ─────────────────────────────────────────────────────────────────
+
+class SentimentExample(BaseModel):
+    text: str
+    score: float
+
+
+class SentimentBucket(BaseModel):
+    label: str  # left edge of the mean_sentiment bin, e.g. "-0.2"
+    count: int
+
+
+class SentimentResponse(BaseModel):
+    city: str
+    reviews_scored: int
+    label_split: dict[str, float] = Field(default_factory=dict, description="positive/neutral/negative shares (donut).")
+    lang_split: dict[str, float] = Field(default_factory=dict, description="Top review-language shares.")
+    metrics: dict[str, float] = Field(default_factory=dict, description="nb_accuracy / nb_f1_macro / corr_sentiment_vs_rating.")
+    examples: dict[str, list[SentimentExample]] = Field(default_factory=dict)
+    listing_histogram: list[SentimentBucket] = Field(default_factory=list)
+    n_listings: int = 0
+    disclaimer: str = ""
+
+
 # ── health ─────────────────────────────────────────────────────────────────────
 
 class HealthResponse(BaseModel):
