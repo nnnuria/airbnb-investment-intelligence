@@ -110,7 +110,54 @@ pip install -e .
 
 # 3. Configure secrets
 cp .env.example .env        # add GOOGLE_API_KEY (Gemini) and APIFY_API_TOKEN
+
+For React UI
+
+# Project Setup
+
+## Prerequisites
+
+* Install **Node.js** (LTS version recommended)
+* Verify the installation:
+
+  ```bash
+  node -v
+  npm -v
+  ```
+
+## Running the Frontend
+
+1. Clone the repository.
+2. Open a terminal in the repository root.
+3. Navigate to the frontend folder:
+
+   ```bash
+   cd frontend
+   ```
+4. Install the project dependencies:
+
+   ```bash
+   npm install
+   ```
+5. Start the development server:
+
+   ```bash
+   npm run dev
+   ```
+6. Open the URL shown in the terminal (typically `http://localhost:5173`).
+
+## Notes
+
+* If the project requires a `.env` file, make sure you have a copy before running the app.
+* Whenever dependencies change, run:
+
+  ```bash
+  npm install
+  ```
+
 ```
+
+
 
 > If `geopandas` fights pip on your machine, install it via conda first.
 
