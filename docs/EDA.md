@@ -64,7 +64,7 @@ Occupancy is measured directly from Inside Airbnb's **calendar** — a night wit
 | Barcelona | 0.58 |
 | Málaga    | 0.52 |
 
-These are the calendar-trained occupancy model's raw 120-day booked-share targets (`model_cards/occupancy_model.md`); the across-city **mean *active* occupancy is 0.48**, with the per-city figures above running higher because the 120-day window is season-aligned to spring/summer demand. The finance engine annualises as `rate × 365`, which the model card notes overstates true annual occupancy.
+These are the calendar-trained model's raw 120-day booked-share targets (`model_cards/occupancy_model.md`), measured over each city's season-aligned spring/summer window — i.e. **high-season** figures. The finance engine annualises them as `rate × 365`, which the card notes **overstates** true year-round occupancy, so the model's central **year-round** estimates are correspondingly lower.
 
 **Madrid leads on demand and data depth** (25k listings, ~1.3M reviews, price populated) — which is why the team prioritised it for the first end-to-end slice and the demo.
 
