@@ -19,8 +19,9 @@ and `src/airbnb_iip/models/nlp.py`.
 
 - **Availability** is fully populated and usable — it's the occupancy/seasonality signal. Madrid has the lowest availability (46% available = highest booked share).
 - **⚠️ `price` is 100% empty in every calendar** (~19M rows). Expected Inside Airbnb behaviour, not a
-  download error. Nightly price must come from `listings.csv`. (Consistent with the SF occupancy
-  model, which already infers bookings from review frequency rather than calendar price.)
+  download error. Nightly price must come from `listings.csv`. (Occupancy is derived from calendar
+  *availability* — `available == 'f'` — not calendar price; the earlier review-frequency estimate was
+  retired, having correlated only ≈ 0.13 with calendar occupancy.)
 - **Committed snapshot = September 2025.** The Barcelona row above is a *superseded* earlier
   snapshot (see the Section 2 note); the committed/modelled data is the September snapshot —
   `last_scraped` Madrid/Barcelona 14 Sep, Málaga 30 Sep 2025 in the committed parquet — and the

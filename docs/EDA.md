@@ -58,11 +58,13 @@ City-specific outliers removed during EDA: implausible records such as `beds = 4
 
 Occupancy is measured directly from Inside Airbnb's **calendar** — a night with `available == 'f'` is treated as booked — and a LightGBM model learns it from listing features (see `FEATURE_ENGINEERING.md §5` and `model_cards/occupancy_model.md`). This replaced the earlier review-velocity (San Francisco) estimate, which correlated only ≈ 0.13 with actual calendar occupancy. EDA-level demand indicators:
 
-| City | Calendar availability | Implied booked share | Median occupancy (days/yr) |
-|---|---:|---:|---:|
-| Madrid | 46% available | **highest** | 64 |
-| Barcelona | 57% available | medium | 62 |
-| Málaga | 57% available | medium | 42 |
+| City | Booked share — calendar-derived, 120-day forward window |
+|---|---:|
+| Madrid    | 0.59 (highest) |
+| Barcelona | 0.58 |
+| Málaga    | 0.52 |
+
+These are the calendar-trained occupancy model's raw 120-day booked-share targets (`model_cards/occupancy_model.md`); the across-city **mean *active* occupancy is 0.48**, with the per-city figures above running higher because the 120-day window is season-aligned to spring/summer demand. The finance engine annualises as `rate × 365`, which the model card notes overstates true annual occupancy.
 
 **Madrid leads on demand and data depth** (25k listings, ~1.3M reviews, price populated) — which is why the team prioritised it for the first end-to-end slice and the demo.
 
@@ -187,7 +189,7 @@ Plus a **national registration number (NRA)** required since 2 Jan 2025 (RD 1312
 
 1. **Three viable markets, one clear lead.** Madrid is the strongest demonstration market — deepest data, highest demand, prices populated.
 2. **Price is log-normal and location-driven.** `log1p(price)` target; neighbourhood + capacity dominate (see §4 of `FEATURE_ENGINEERING.md` and the price-model SHAP drivers).
-3. **Occupancy must be inferred, not read.** Calendar prices are 100% null; occupancy comes from review velocity, validated at ~52% against AirROI for Madrid.
+3. **Occupancy must be inferred, not read.** Calendar *prices* are 100% null, but calendar *availability* is fully populated — occupancy is the calendar-derived booked share (`available == 'f'`, 120-day forward window) from the team's calendar-trained LightGBM model; the earlier review-velocity estimate was retired, having correlated only ≈ 0.13 with calendar occupancy.
 4. **Seasonality is genuinely uncertain in summer** — internal signals and the external benchmark disagree on August. A documented limitation, not a bug.
 5. **Sale price is non-linear in size** — model total price, not €/m² × size.
 6. **Regulation can override the numbers** — the most defensible, KPMG-aligned insight in the analysis.
