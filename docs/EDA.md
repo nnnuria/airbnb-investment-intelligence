@@ -66,7 +66,7 @@ Occupancy is measured directly from Inside Airbnb's **calendar** — a night wit
 
 Madrid and Barcelona are **effectively tied** at the top (0.59 vs 0.58 — a negligible gap); only Málaga (0.52) sits clearly lower.
 
-These are the calendar-trained model's raw 120-day booked-share targets (`model_cards/occupancy_model.md`), measured over each city's season-aligned spring/summer window — i.e. **high-season** figures. The finance engine annualises them as `rate × 365`, which the card notes **overstates** true year-round occupancy, so the model's central **year-round** estimates are correspondingly lower.
+These are the calendar-trained model's raw 120-day booked-share targets (`model_cards/occupancy_model.md`), measured over each city's season-aligned spring/summer window — i.e. **high-season** figures. Note the windows fall in **different years** (Málaga 2025, Madrid/Barcelona 2026), so cross-city differences are not fully year-controlled (see `occupancy_model.md`). The finance engine annualises them as `rate × 365`, which the card notes **overstates** true year-round occupancy, so the model's central **year-round** estimates are correspondingly lower.
 
 **Madrid leads on data depth** (25k listings, ~1.3M reviews, price populated) and ties Barcelona at the top on demand — which is why the team prioritised it for the first end-to-end slice and the demo.
 
