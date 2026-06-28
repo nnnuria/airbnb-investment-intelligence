@@ -231,6 +231,6 @@
   "calendar_cutoff": null,
   "occupancy_horizon_days": 120,
   "calendar_overrides": {
-    "Malaga": "/Users/nicklasurban/Downloads/calendar.csv.gz"
+    "Malaga": "<local-path>/calendar.csv.gz"
   }
 }
