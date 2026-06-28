@@ -17,7 +17,7 @@ and `src/airbnb_iip/models/nlp.py`.
 | Barcelona *(superseded)* | 18,177 | 14 Dec 2025 → 14 Dec 2026 | 57% | empty |
 | Málaga    |  9,714 | 30 Sep 2025 → 29 Sep 2026 | 57% | empty |
 
-- **Availability** is fully populated and usable — it's the occupancy/seasonality signal. Madrid has the lowest availability (46% available = highest booked share). *(These are raw full-calendar availability rates, and the Barcelona row is the superseded December snapshot — so do not read the per-city ranking here as final. The authoritative, cross-city-comparable demand figures are the calendar-trained model's 120-day booked-share targets in `EDA.md §4` / `model_cards/occupancy_model.md`.)*
+- **Availability** is fully populated and usable — it's the occupancy/seasonality signal. Madrid has the lowest availability (46% available = highest booked share by this raw availability measure). *(These are raw full-calendar availability rates, and the Barcelona row is the superseded December snapshot — so do not read the per-city ranking here as final. The authoritative, cross-city-comparable demand figures are the calendar-trained model's 120-day booked-share targets in `EDA.md §4` / `model_cards/occupancy_model.md`.)*
 - **⚠️ `price` is 100% empty in every calendar** (~19M rows). Expected Inside Airbnb behaviour, not a
   download error. Nightly price must come from `listings.csv`. (Occupancy is derived from calendar
   *availability* — `available == 'f'` — not calendar price; the earlier review-frequency estimate was
