@@ -17,8 +17,15 @@ now/
 .env
 
 # Large / private data (folder structure is recreated per machine)
+# The repo uses Data/ (capital D); case-insensitive filesystems hide the
+# mismatch, so list both variants — otherwise raw/interim data is NOT ignored
+# on case-sensitive systems (e.g. Linux CI). Note: Data/processed/ is kept
+# intentionally (the app loads those parquet/model artefacts at runtime).
 data/raw/
 data/interim/
+Data/raw/
+Data/interim/
+Data/external/
 
 
 # MLflow local store
