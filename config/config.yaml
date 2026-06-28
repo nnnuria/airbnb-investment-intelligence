@@ -18,7 +18,7 @@ finance:                    # editable + auditable (governance)
   platform_fee_pct: 0.03
   vacancy_buffer_pct: 0.05
   long_term_mgmt_pct: 0.08
-  income_tax_pct: 0.19
+  income_tax_pct: 0.21
 
 seeds:
   random_state: 42
