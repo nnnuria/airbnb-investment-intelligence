@@ -38,10 +38,6 @@ CGT_BRACKETS = [
     (float("inf"), 0.26),
 ]
 
-# Regulatory shock probability (Bernoulli, per year) used as a Monte Carlo input —
-# see docs/INVESTMENT_DECISION_FRAMEWORK.md Section 8.
-REGULATORY_SHOCK_PROB = {"madrid": 0.08, "barcelona": 0.20, "malaga": 0.05}
-
 RANDOM_STATE = 42
 
 # ── Financial analysis enhancements ──────────────────────────────────────────
