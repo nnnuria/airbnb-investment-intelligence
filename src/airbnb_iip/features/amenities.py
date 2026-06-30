@@ -38,8 +38,9 @@ import pandas as pd
 
 # ── Canonical pattern table ──────────────────────────────────────────────────
 # (column_name → (include_regex, exclude_regex_or_None))
-# Lifted verbatim from `scripts/make_price_notebook.py` to preserve the
-# trained price model's input contract.
+# Lifted verbatim from the price-model training notebook
+# (`notebooks/price_ml_model.ipynb`) to preserve the trained price model's
+# input contract.
 AMENITY_PATTERNS: dict[str, tuple[str, str | None]] = {
     "has_pool":             (r"\bpool\b",                                 r"pool table"),
     "has_gym":              (r"\bgym\b",                                  None),

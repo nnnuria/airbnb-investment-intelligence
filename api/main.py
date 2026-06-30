@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
         get_sale_predictor()
         app.state.price_model_loaded = True
         logger.info("Price and sale models warmed at startup.")
-    except Exception:  # pragma: no cover - degraded mode still serves stubs
+    except Exception:  # pragma: no cover - startup continues; model endpoints error if unloaded
         app.state.price_model_loaded = False
         logger.exception("Model warm-up failed — /predict_price and /airbnb_vs_sell will error.")
     yield

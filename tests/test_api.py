@@ -1,8 +1,8 @@
 """Smoke tests for the FastAPI layer.
 
-Live endpoints are checked against the real model/estimator; stubs are checked
-for shape + the ``_stub`` flag so a future wiring change is caught if it
-accidentally changes the response contract.
+All endpoints are live: each is checked against the real model/estimator for
+response shape and internal coherence, so a wiring change that breaks the
+response contract is caught here.
 """
 
 from __future__ import annotations
@@ -118,7 +118,6 @@ def test_optimise_is_live_and_ranked():
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["_stub"] is False
     assert body["peer_n"] > 0
     assert body["projected_annual_nights"] > 0
     actions = body["actions"]
@@ -142,7 +141,6 @@ def test_estimate_revenue_is_live_and_coherent():
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["_stub"] is False
     # Gross = 120 * 0.5 * 365; net is after costs + tax, so strictly lower.
     assert body["annual_gross_eur"] == pytest.approx(120 * 0.5 * 365, rel=1e-6)
     assert 0 < body["annual_net_eur"] < body["annual_gross_eur"]
@@ -156,7 +154,6 @@ def test_airbnb_vs_sell_is_live_and_coherent():
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["_stub"] is False
     assert body["recommendation"] in ("Airbnb", "Sell")
     assert body["npv_sell_eur"] > 0
     assert body["break_even_years"] is None or isinstance(body["break_even_years"], int)

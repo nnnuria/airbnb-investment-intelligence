@@ -1,10 +1,9 @@
 """Pydantic request/response models — the API contract.
 
-These schemas are the contract the Streamlit UI and the agent layer code
-against. The two finance endpoints (``/estimate_revenue``, ``/airbnb_vs_sell``)
-and ``/optimise`` return **flagged stubs** today (``_stub: true``) that already
-match their final response shape, so downstream work can integrate now and the
-real services swap in without schema churn.
+These schemas are the contract the React SPA and the agent layer code against.
+All eleven endpoints are live: ``/estimate_revenue`` and ``/airbnb_vs_sell`` are
+backed by ``airbnb_iip.finance`` + the ML models, and ``/optimise`` by
+``airbnb_iip.agents.optimisation``.
 """
 
 from __future__ import annotations
@@ -123,7 +122,7 @@ class EstimateOccupancyResponse(BaseModel):
     basis: str = "Inside Airbnb calendar availability — available == 'f' counted as a booked night"
 
 
-# ── /estimate_revenue (stub) ─────────────────────────────────────────────────────
+# ── /estimate_revenue ─────────────────────────────────────────────────────────
 
 class EstimateRevenueRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -139,11 +138,9 @@ class EstimateRevenueResponse(BaseModel):
     p10_eur: float
     p50_eur: float
     p90_eur: float
-    stub: bool = Field(default=True, alias="_stub")
-    note: str = "Stub — wire to airbnb_iip.finance.costs when merged."
 
 
-# ── /airbnb_vs_sell (stub) ───────────────────────────────────────────────────────
+# ── /airbnb_vs_sell ───────────────────────────────────────────────────────────
 
 class AirbnbVsSellRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -162,11 +159,9 @@ class AirbnbVsSellResponse(BaseModel):
     break_even_years: Optional[int]
     confidence: dict
     disclaimer: str = "Indicative only — not financial advice."
-    stub: bool = Field(default=True, alias="_stub")
-    note: str = "Stub — wire to airbnb_iip.finance.scenarios + sale-value service."
 
 
-# ── /optimise (live) ─────────────────────────────────────────────────────────────
+# ── /optimise ─────────────────────────────────────────────────────────────────
 
 class OptimiseRequest(BaseModel):
     """Property spec for the revenue-optimisation plan.
@@ -208,8 +203,6 @@ class OptimiseResponse(BaseModel):
     gap_to_top_quartile_eur: float
     projected_annual_nights: int
     disclaimer: str = "Indicative only — uplift estimates are modelled, not guaranteed."
-    stub: bool = Field(default=False, alias="_stub")
-    note: str = "Live — airbnb_iip.agents.optimisation (counterfactual + residual + Apriori)."
 
 
 # ── /scenario ────────────────────────────────────────────────────────────────────
@@ -299,6 +292,7 @@ class ScenarioResponse(BaseModel):
     npv_advantage_eur: float = 0.0
     holding_years: int = 10
     discount_rate: float = 0.07
+    regulatory_shock_prob: float = 0.0
 
     monthly_seasonality: list[float] = Field(default_factory=list)
     # (label, eur) cost lines and (label, fraction) SHAP drivers; tuples

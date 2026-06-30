@@ -283,6 +283,7 @@ def monte_carlo(
     setup_cost: float = 0.0,
     terminal_value_net: float = 0.0,
     noi_growth_rate: float = 0.0,
+    shock_prob: float = 0.0,
     n_simulations: int = 10_000,
     random_state: int | None = None,
 ) -> dict[str, float]:
@@ -300,6 +301,17 @@ def monte_carlo(
     ``gross_revenue``, which this function computes per-sample) — e.g.
     ``property_value``, ``management_fee_rate``, fixed cost lines.
 
+    ``shock_prob`` is the **annual** probability of a regulatory shock
+    (licence loss / moratorium / saturation cap) ending STR operation. Each
+    simulation draws an independent Bernoulli per year; the first year it
+    fires is the licence-loss year, and the Airbnb NOI stream is **truncated**
+    from that year onward (those years contribute zero NOI). The terminal
+    value is still realised at the end of the horizon — the owner keeps the
+    property, they just can no longer let it short-term. ``shock_prob=0``
+    (the default) reproduces the no-shock behaviour exactly. See §7.2 of the
+    framework doc; per-city probabilities live in
+    :data:`airbnb_iip.config.REGULATORY_SHOCK_PROB_BY_CITY`.
+
     Returns a dict with ``p10``, ``p50``, ``p90`` (NPV_airbnb, EUR) and
     ``p_airbnb_gt_sell`` (share of simulations where Airbnb beats selling
     now) — feeds the API's ``confidence`` field directly.
@@ -312,22 +324,40 @@ def monte_carlo(
         raise ValueError(f"n_simulations must be > 0, got {n_simulations}")
     if price_hat < 0 or occ_hat < 0:
         raise ValueError("price_hat and occ_hat must be >= 0")
+    if not 0 <= shock_prob <= 1:
+        raise ValueError(f"shock_prob must be in [0, 1], got {shock_prob}")
 
     rng = np.random.default_rng(random_state)
     price_draws = rng.normal(price_hat, price_hat * price_sigma_pct, n_simulations).clip(min=0)
     occ_draws = rng.normal(occ_hat, occ_hat * occ_sigma_pct, n_simulations).clip(min=0, max=365)
 
+    # Per-year licence-loss draws. shock_year[i] = first year (1-indexed) a shock
+    # fires for simulation i, or 0 if it never fires across the horizon.
+    if shock_prob > 0:
+        shocks = rng.random((n_simulations, years)) < shock_prob
+        any_shock = shocks.any(axis=1)
+        shock_year = np.where(any_shock, shocks.argmax(axis=1) + 1, 0)
+    else:
+        shock_year = np.zeros(n_simulations, dtype=int)
+
+    # Per-year growth factors for the flat-NOI-with-growth path: year t (1-indexed)
+    # earns noi_yr1 * (1+g)^(t-1), matching npv_airbnb's scalar compounding.
+    growth = (1 + noi_growth_rate) ** np.arange(years)
+
     npvs = np.empty(n_simulations)
     for i in range(n_simulations):
         gross = annual_gross_revenue(price_draws[i], occ_draws[i])
         noi_yr1 = compute_noi(gross, **cost_kwargs)["noi"]
+        noi_series = noi_yr1 * growth
+        sy = shock_year[i]
+        if sy:
+            noi_series = noi_series.copy()
+            noi_series[sy - 1:] = 0.0  # licence lost from year `sy` onward
         npvs[i] = npv_airbnb(
-            noi_yr1,
-            years=years,
+            noi_series,
             terminal_value_net=terminal_value_net,
             discount_rate=discount_rate,
             setup_cost=setup_cost,
-            noi_growth_rate=noi_growth_rate,
         )
 
     p10, p50, p90 = np.percentile(npvs, [10, 50, 90])

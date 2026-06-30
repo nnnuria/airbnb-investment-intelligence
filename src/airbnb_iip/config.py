@@ -29,6 +29,20 @@ FINANCE = {
 # Barcelona-only pass-through tourist tax (Madrid/Málaga: 0). EUR per guest per night.
 TOURIST_TAX_EUR_PER_GUEST_NIGHT = {"barcelona": 4.40, "madrid": 0.0, "malaga": 0.0}
 
+# Annual probability that a regulatory shock (licence revocation / moratorium /
+# saturation cap) ends the property's ability to operate as a short-term rental
+# in a given year. Drawn per year in the Monte Carlo (airbnb_iip.finance.
+# scenarios.monte_carlo): once a shock fires, the Airbnb NOI stream is truncated
+# from that year onward. Barcelona's 20% reflects the announced 2028 phase-out of
+# tourist-flat licences; Madrid/Málaga are lower but non-zero given tightening
+# zoning and saturation rules. See INVESTMENT_DECISION_FRAMEWORK.md §7.
+REGULATORY_SHOCK_PROB_BY_CITY: dict[str, float] = {
+    "madrid":    0.08,
+    "barcelona": 0.20,
+    "malaga":    0.05,
+}
+REGULATORY_SHOCK_PROB_DEFAULT = 0.0  # unknown cities: no modelled shock
+
 # Spanish CGT brackets on sale (2024), as (upper_bound, rate). The last bound is
 # math.inf so it always matches. Applied progressively, like income tax.
 CGT_BRACKETS = [

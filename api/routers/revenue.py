@@ -20,7 +20,11 @@ from __future__ import annotations
 import numpy as np
 from fastapi import APIRouter, Depends
 
-from airbnb_iip.config import OCCUPANCY
+from airbnb_iip.config import (
+    OCCUPANCY,
+    REGULATORY_SHOCK_PROB_BY_CITY,
+    REGULATORY_SHOCK_PROB_DEFAULT,
+)
 from airbnb_iip.models.occupancy import get_occupancy_predictor
 from airbnb_iip.finance.costs import (
     annual_gross_revenue,
@@ -86,7 +90,6 @@ def estimate_revenue(req: EstimateRevenueRequest) -> EstimateRevenueResponse:
         p50_eur=p50,
         p90_eur=p90,
     )
-    resp.stub, resp.note = False, "Live — airbnb_iip.finance.costs"
     return resp
 
 
@@ -137,6 +140,9 @@ def airbnb_vs_sell(
     npv_sell_value = npv_sell(sale_value, purchase_price=purchase_price)["net_proceeds"]
 
     # Airbnb side + break-even + uncertainty (flat terminal value = sell proceeds).
+    shock_prob = REGULATORY_SHOCK_PROB_BY_CITY.get(
+        city.strip().lower(), REGULATORY_SHOCK_PROB_DEFAULT
+    )
     mc = monte_carlo(
         nightly,
         nights,
@@ -145,6 +151,7 @@ def airbnb_vs_sell(
         cost_kwargs=cost_kwargs,
         discount_rate=req.discount_rate,
         terminal_value_net=npv_sell_value,
+        shock_prob=shock_prob,
         random_state=42,
     )
     break_even = break_even_horizon(
@@ -165,5 +172,4 @@ def airbnb_vs_sell(
             "p90_eur": round(mc["p90"], 2),
         },
     )
-    resp.stub, resp.note = False, "Live — airbnb_iip.finance.scenarios + models"
     return resp

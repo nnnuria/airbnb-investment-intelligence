@@ -30,6 +30,8 @@ from airbnb_iip.config import (
     NOI_GROWTH_RATE_DEFAULT,
     OCCUPANCY,
     PROPERTY_APPRECIATION_RATE_DEFAULT,
+    REGULATORY_SHOCK_PROB_BY_CITY,
+    REGULATORY_SHOCK_PROB_DEFAULT,
 )
 from airbnb_iip.data.occupancy import DAYS_PER_YEAR
 from airbnb_iip.models.occupancy import get_occupancy_predictor
@@ -211,6 +213,11 @@ class Scenario:
     npv_advantage_eur: float = 0.0              # npv_airbnb_p50_eur − npv_sell_eur
     holding_years: int = 10
     discount_rate: float = 0.07
+
+    # Annual regulatory-shock probability folded into the Monte Carlo for this
+    # city (0 if none modelled). Surfaced so the UI/agent can explain why a
+    # high-shock city (Barcelona) leans toward selling.
+    regulatory_shock_prob: float = 0.0
 
     monthly_seasonality: list[float] = field(default_factory=list)
     cost_breakdown: list[tuple[str, float]] = field(default_factory=list)
@@ -709,6 +716,14 @@ def compute_scenario(
         nightly, annual_nights, _make_cost_kwargs, n=1500,
     )
 
+    # Per-city annual regulatory-shock probability (licence loss / moratorium /
+    # saturation cap). Truncates the Airbnb NOI stream in the Monte Carlo from
+    # the shock year onward — Barcelona's 0.20 is the dominant driver of its
+    # sell-leaning recommendations (framework doc §7.2).
+    shock_prob = REGULATORY_SHOCK_PROB_BY_CITY.get(
+        city_key, REGULATORY_SHOCK_PROB_DEFAULT
+    )
+
     mc = monte_carlo(
         price_hat=nightly,
         occ_hat=annual_nights,
@@ -719,6 +734,7 @@ def compute_scenario(
         setup_cost=setup_cost_eur,
         noi_growth_rate=noi_growth_rate,
         discount_rate=discount_rate,
+        shock_prob=shock_prob,
         random_state=42,
         n_simulations=1500,
     )
@@ -734,6 +750,7 @@ def compute_scenario(
         setup_cost=setup_cost_eur,
         noi_growth_rate=noi_growth_rate,
         discount_rate=discount_rate,
+        shock_prob=shock_prob,
         random_state=42,
         n_simulations=1500,
     )
@@ -819,6 +836,7 @@ def compute_scenario(
         npv_advantage_eur=round(mc["p50"] - sell_net, 0),
         holding_years=holding_years,
         discount_rate=discount_rate,
+        regulatory_shock_prob=shock_prob,
         monthly_seasonality=seasonality,
         cost_breakdown=costs,
         feature_drivers=drivers,

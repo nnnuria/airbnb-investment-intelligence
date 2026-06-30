@@ -6,8 +6,8 @@ ground-distance radius (default 500 m). The output column
 contract — preserve it exactly.
 
 Implementation lifted verbatim from `notebooks/price_ml_model.ipynb` cell
-5.3 (generated from ``scripts/make_price_notebook.py``). Per-city trees,
-not one global tree, so neighbours never bleed across cities.
+5.3. Per-city trees, not one global tree, so neighbours never bleed across
+cities.
 
 Why per-city trees rather than per-district:
 

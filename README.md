@@ -29,14 +29,16 @@ Cities covered: **Madrid · Barcelona · Málaga** · Data snapshot: **14 Sep 20
 
 ```
 Owner inputs property details
-   → Streamlit UI (4 pages: New Analysis · Chat · Saved Properties · Optimisation)
-      → Analysis engine (app/components/engine.py) orchestrates
-         ├─ Price model       → city-specific LightGBM (Madrid / Barcelona / Málaga) + SHAP
-         ├─ Sale model        → Idealista-backed district price-per-m² regression
-         ├─ Finance engine    → Airbnb net revenue vs. sell scenario (P10/P50/P90 bands)
-         ├─ Market Analyst    → narrates the comparison, surfaces SHAP "why"
-         ├─ Regulatory (RAG)  → municipal STR rules with source citations
-         └─ Comparables       → genuinely similar performing listings (KNN)
+   → React SPA (4 routes: New Analysis · Chat · Saved Properties · Optimisation) + Copilot
+      → FastAPI (11 live endpoints)
+         → Decision engine (src/airbnb_iip/decision/engine.py) orchestrates
+            ├─ Price model       → city-specific LightGBM (Madrid / Barcelona / Málaga) + SHAP
+            ├─ Sale model        → Idealista-backed district price-per-m² regression
+            ├─ Finance engine    → Airbnb net revenue vs. sell scenario (P10/P50/P90 bands +
+            │                       per-city annual regulatory-shock probability)
+            ├─ Market Analyst    → narrates the comparison, surfaces SHAP "why"
+            ├─ Regulatory (RAG)  → municipal STR rules with source citations
+            └─ Comparables       → genuinely similar performing listings (KNN)
       → explainable brief: numbers from the models, narration from the LLM,
         with uncertainty bands and cited sources
 
@@ -58,8 +60,8 @@ Full diagram: [`docs/Architecture_Diagram.svg`](docs/Architecture_Diagram.svg).
 
 - **Data & ML:** pandas, scikit-learn (HistGradientBoosting / LightGBM), SHAP, statsmodels, scipy, plotly
 - **AI layer:** LangChain + FAISS (RAG), sentence-transformers, langchain-google-genai (Gemini narration), LangGraph
-- **API:** FastAPI (model serving — `/predict_price`, `/estimate_occupancy`, `/estimate_revenue`, `/airbnb_vs_sell`)
-- **UI:** Streamlit (4-page app)
+- **API:** FastAPI (11 live endpoints — `/predict_price`, `/explain_price`, `/estimate_occupancy`, `/estimate_revenue`, `/airbnb_vs_sell`, `/scenario`, `/comparables`, `/regulatory_risk`, `/chat`, `/market_report`, `/optimise`)
+- **UI:** React SPA ⭐ primary (Vite · Tailwind · TanStack Query · Zustand · Recharts · Axios) — 4 routes + Copilot. A legacy Streamlit app is retained under `app/` to show the project's progression.
 - **MLOps:** pytest, GitHub Actions (CI/CD)
 
 ---
@@ -74,14 +76,15 @@ src/airbnb_iip/       installable package — all reusable logic
   models/             price (city-specific + general) · sale (Idealista-backed)
   finance/            costs · scenarios — pure functions, the core engine
   agents/             market_analyst · regulatory (RAG) · comparables · governance
-api/                  FastAPI model services
-  routers/            predict · revenue · optimise
-app/                  Streamlit application
+api/                  FastAPI service — 11 live endpoints (primary backend)
+  routers/            predict · revenue · optimise · scenario · agents
+frontend/             React SPA ⭐ primary UI (Vite · Tailwind · TanStack Query)
+app/                  legacy Streamlit application — retained to show progression
   Home.py             landing page
   pages/              1_New_Analysis · 2_Chat · 3_Saved_Properties · 4_Optimisation
-  components/         branding · engine · storage · styling
+  components/         branding · storage · styling
 models/               trained artefacts: price_city_*.pkl · sale_best_model.pkl · …
-scripts/              scrape_idealista · make_price_notebook · make_sell_model_notebook
+scripts/              scrape_idealista · train_price_model · train_sale_model · train_occupancy_model
 notebooks/            price_ml_model · price_ml_model_comparison · sell_price_eda ·
                       sell_price_model · segmentation · amenity_feature_engineering · …
 config/               config.yaml (editable cost assumptions)
@@ -109,7 +112,7 @@ pip install -r requirements.txt -r requirements-dev.txt
 pip install -e .
 
 # 3. Configure secrets
-cp .env.example .env        # add GOOGLE_API_KEY (Gemini) and APIFY_API_TOKEN
+cp .env.example .env        # add GEMINI_API_KEY (Gemini) and APIFY_API_TOKEN
 ```
 
 # Project Setup For React UI
@@ -165,11 +168,14 @@ cp .env.example .env        # add GOOGLE_API_KEY (Gemini) and APIFY_API_TOKEN
 ## Running the project
 
 ```bash
-# Run the Streamlit app (primary interface)
-streamlit run app/Home.py              # → http://localhost:8501
-
-# Run the FastAPI model-serving layer
+# Run the FastAPI backend (serves all 11 endpoints)
 uvicorn api.main:app --reload          # → http://localhost:8000/docs
+
+# Run the React SPA (primary interface) — see "Project Setup For React UI" above
+cd frontend && npm run dev             # → http://localhost:5173
+
+# Run the legacy Streamlit app (retained to show project progression)
+streamlit run app/Home.py              # → http://localhost:8501
 
 # Scrape fresh Idealista sale/rent data
 python scripts/scrape_idealista.py    # requires APIFY_API_TOKEN in .env
@@ -271,15 +277,13 @@ The project exercises the full master curriculum: feature engineering & ABT desi
 hierarchical / DBSCAN** with silhouette & elbow), **association analysis (Apriori)** for amenity
 bundle recommendations, linear/OLS regression, **LightGBM** with SHAP, **Naïve Bayes +
 TF-IDF** sentiment for guest review analysis, **KNN** for comparable listings, and a complete
-RAG + agent-orchestration stack. The full mapping is in
-[`docs/UC2_Ordered_Task_Backlog.md`](docs/UC2_Ordered_Task_Backlog.md).
+RAG + agent-orchestration stack.
 
 ---
 
 ## Project documents
 
 - [`docs/INVESTMENT_DECISION_FRAMEWORK.md`](docs/INVESTMENT_DECISION_FRAMEWORK.md) — NPV comparison design, cost model, ML model plan
-- [`docs/UC2_Ordered_Task_Backlog.md`](docs/UC2_Ordered_Task_Backlog.md) — ordered build tasks (primary + optimisation flows)
 - [`docs/structure.md`](docs/structure.md) — setup & engineering conventions
 - [`docs/Architecture_Diagram.svg`](docs/Architecture_Diagram.svg) — system architecture diagram
 - [`docs/DATA_FINDINGS.md`](docs/DATA_FINDINGS.md) — calendar, listings, and sentiment findings

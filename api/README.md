@@ -20,13 +20,11 @@ Then open the interactive docs at <http://127.0.0.1:8000/docs>.
 | GET  | `/health` | live | — |
 | POST | `/predict_price` | **live** | LightGBM price model (`models/price_*.pkl`) |
 | POST | `/estimate_occupancy` | **live** | `airbnb_iip.data.occupancy` (SF model) |
-| POST | `/estimate_revenue` | stub | `airbnb_iip.finance.costs` *(when merged)* |
-| POST | `/airbnb_vs_sell` | stub | `airbnb_iip.finance.scenarios` + sale-value service |
-| POST | `/optimise` | stub | optimisation flow (Phase 7b) |
+| POST | `/estimate_revenue` | **live** | `airbnb_iip.finance.costs` |
+| POST | `/airbnb_vs_sell` | **live** | `airbnb_iip.finance.scenarios` + price/sale models |
+| POST | `/optimise` | **live** | `airbnb_iip.agents.optimisation` (counterfactual + residual + Apriori) |
 
-Stub responses include `"_stub": true` and already match the final response
-schema, so the UI/agents can integrate now. Going live = replacing the handler
-body at the `TODO` marker; the response shape does not change.
+All endpoints are live and backed by the real models/finance code.
 
 ## Example
 
