@@ -20,5 +20,14 @@ finance:                    # editable + auditable (governance)
   long_term_mgmt_pct: 0.08
   income_tax_pct: 0.21
 
+# Annual probability that a regulatory shock (licence loss / moratorium /
+# saturation cap) ends STR operation in a given year. Truncates the Airbnb NOI
+# stream in the Monte Carlo from the shock year onward. See config.py
+# REGULATORY_SHOCK_PROB_BY_CITY and INVESTMENT_DECISION_FRAMEWORK.md §7.
+regulatory_shock:
+  madrid: 0.08
+  barcelona: 0.20         # announced 2028 tourist-flat licence phase-out
+  malaga: 0.05
+
 seeds:
   random_state: 42

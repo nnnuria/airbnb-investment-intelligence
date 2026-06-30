@@ -1,0 +1,139 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="820" viewBox="0 0 1040 820" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#555"/>
+    </marker>
+    <style>
+      .layer { fill:#f7f9fc; stroke:#c8d2e0; stroke-width:1.5; rx:10; }
+      .layer-title { font-size:13px; font-weight:700; fill:#1f3a5f; letter-spacing:.5px; }
+      .box { stroke-width:1.4; rx:8; }
+      .box-title { font-size:13px; font-weight:700; }
+      .box-sub { font-size:10.5px; fill:#3a4a5e; }
+      .flow { stroke:#555; stroke-width:2; fill:none; marker-end:url(#arrow); }
+      .conn { stroke:#555; stroke-width:2; fill:none; }
+      .note { font-size:10px; fill:#6b7a8d; font-style:italic; }
+      .title { font-size:21px; font-weight:700; fill:#15263d; }
+      .subtitle { font-size:12.5px; fill:#5a6b7e; }
+    </style>
+  </defs>
+
+  <text x="520" y="34" text-anchor="middle" class="title">Airbnb Investment Intelligence Platform — Architecture</text>
+  <text x="520" y="54" text-anchor="middle" class="subtitle">IE × KPMG Lighthouse Capstone 2026 · Madrid · Barcelona · Málaga</text>
+
+  <!-- ───────── Layer 1: Data sources ───────── -->
+  <rect class="layer" x="30" y="74" width="700" height="92"/>
+  <text x="46" y="94" class="layer-title">DATA SOURCES</text>
+  <rect class="box" x="46" y="104" width="205" height="50" fill="#e8f0fe" stroke="#7aa7e0"/>
+  <text x="60" y="124" class="box-title" fill="#1f4e8c">Inside Airbnb</text>
+  <text x="60" y="140" class="box-sub">listings + forward calendar</text>
+  <rect class="box" x="270" y="104" width="205" height="50" fill="#e8f0fe" stroke="#7aa7e0"/>
+  <text x="284" y="124" class="box-title" fill="#1f4e8c">Idealista (Apify)</text>
+  <text x="284" y="140" class="box-sub">district sale price / m²</text>
+  <rect class="box" x="494" y="104" width="220" height="50" fill="#e8f0fe" stroke="#7aa7e0"/>
+  <text x="508" y="124" class="box-title" fill="#1f4e8c">Regulatory PDFs</text>
+  <text x="508" y="140" class="box-sub">municipal / regional STR rules</text>
+
+  <!-- LLM side-rail -->
+  <rect class="box" x="760" y="74" width="250" height="92" fill="#fff4e6" stroke="#e0a96d"/>
+  <text x="774" y="98" class="box-title" fill="#b3621b">Gemini (langchain-google-genai)</text>
+  <text x="774" y="118" class="box-sub">narration · regulatory RAG answers</text>
+  <text x="774" y="134" class="box-sub">· chat copilot. Temperature 0,</text>
+  <text x="774" y="150" class="box-sub">grounded — never invents numbers.</text>
+
+  <!-- ───────── Layer 2: ML models ───────── -->
+  <rect class="layer" x="30" y="186" width="700" height="100"/>
+  <text x="46" y="206" class="layer-title">ML MODELS (LightGBM)</text>
+  <rect class="box" x="46" y="216" width="205" height="58" fill="#e6f4ea" stroke="#6cb389"/>
+  <text x="60" y="236" class="box-title" fill="#1d6b40">Price</text>
+  <text x="60" y="252" class="box-sub">city-specific + SHAP</text>
+  <text x="60" y="267" class="box-sub">/predict_price · /explain_price</text>
+  <rect class="box" x="270" y="216" width="205" height="58" fill="#e6f4ea" stroke="#6cb389"/>
+  <text x="284" y="236" class="box-title" fill="#1d6b40">Occupancy</text>
+  <text x="284" y="252" class="box-sub">calendar-based, by-city</text>
+  <text x="284" y="267" class="box-sub">/estimate_occupancy</text>
+  <rect class="box" x="494" y="216" width="220" height="58" fill="#e6f4ea" stroke="#6cb389"/>
+  <text x="508" y="236" class="box-title" fill="#1d6b40">Sale</text>
+  <text x="508" y="252" class="box-sub">Idealista district regression</text>
+  <text x="508" y="267" class="box-sub">scaler-free pipeline</text>
+
+  <!-- ───────── Layer 3: Finance & decision engine ───────── -->
+  <!-- Narrowed to width 905 (ends x=935) to leave a clear channel on the right
+       for the dashed Gemini → agent-layer arrow to pass straight down. -->
+  <rect class="layer" x="30" y="306" width="905" height="104"/>
+  <text x="46" y="326" class="layer-title">FINANCE &amp; DECISION ENGINE  ·  pure, testable functions</text>
+  <rect class="box" x="46" y="336" width="268" height="60" fill="#fdeef0" stroke="#d98a96"/>
+  <text x="60" y="356" class="box-title" fill="#9c2c3e">finance/costs</text>
+  <text x="60" y="372" class="box-sub">NOI · IBI · basuras · tourist tax ·</text>
+  <text x="60" y="387" class="box-sub">cleaning · management · IRPF/CGT</text>
+  <rect class="box" x="334" y="336" width="300" height="60" fill="#fdeef0" stroke="#d98a96"/>
+  <text x="348" y="356" class="box-title" fill="#9c2c3e">finance/scenarios</text>
+  <text x="348" y="372" class="box-sub">NPV Airbnb vs sell · break-even · IRR ·</text>
+  <text x="348" y="387" class="box-sub">Monte Carlo P10/P50/P90 + regulatory shock</text>
+  <rect class="box" x="654" y="336" width="261" height="60" fill="#fdeef0" stroke="#d98a96"/>
+  <text x="668" y="356" class="box-title" fill="#9c2c3e">decision/engine</text>
+  <text x="668" y="372" class="box-sub">orchestrates models + finance into</text>
+  <text x="668" y="387" class="box-sub">one Scenario (recommendation + bands)</text>
+
+  <!-- ───────── Layer 4: Agent layer (governed) ───────── -->
+  <rect class="layer" x="30" y="430" width="980" height="116"/>
+  <text x="46" y="450" class="layer-title">AGENT LAYER  ·  wrapped by GOVERNANCE (output-bounds guardrails · "indicative, not advice" · model cards)</text>
+  <!-- The two Gemini-fed agents (Market Analyst, Regulatory) are placed as the
+       rightmost boxes — under the Gemini box and right of where the title text
+       ends — so the dashed arrows drop straight in, crossing nothing. -->
+  <rect class="box" x="46" y="460" width="180" height="74" fill="#eef0fb" stroke="#8a8fd0"/>
+  <text x="60" y="480" class="box-title" fill="#3b3f9c">Comparables</text>
+  <text x="60" y="497" class="box-sub">KNN similar</text>
+  <text x="60" y="511" class="box-sub">performers</text>
+  <text x="60" y="525" class="box-sub">/comparables</text>
+  <rect class="box" x="238" y="460" width="180" height="74" fill="#eef0fb" stroke="#8a8fd0"/>
+  <text x="252" y="480" class="box-title" fill="#3b3f9c">Optimisation</text>
+  <text x="252" y="497" class="box-sub">amenity uplift ·</text>
+  <text x="252" y="511" class="box-sub">Apriori · peer gap</text>
+  <text x="252" y="525" class="box-sub">/optimise</text>
+  <rect class="box" x="430" y="460" width="180" height="74" fill="#eef0fb" stroke="#8a8fd0"/>
+  <text x="444" y="480" class="box-title" fill="#3b3f9c">Market Report</text>
+  <text x="444" y="497" class="box-sub">+ IBI / coordinator</text>
+  <text x="444" y="511" class="box-sub">helpers</text>
+  <text x="444" y="525" class="box-sub">/market_report</text>
+  <rect class="box" x="622" y="460" width="180" height="74" fill="#eef0fb" stroke="#8a8fd0"/>
+  <text x="636" y="480" class="box-title" fill="#3b3f9c">Market Analyst</text>
+  <text x="636" y="497" class="box-sub">narrates the</text>
+  <text x="636" y="511" class="box-sub">comparison · SHAP</text>
+  <text x="636" y="525" class="box-sub">"why" · /chat</text>
+  <rect class="box" x="814" y="460" width="180" height="74" fill="#eef0fb" stroke="#8a8fd0"/>
+  <text x="828" y="480" class="box-title" fill="#3b3f9c">Regulatory (RAG)</text>
+  <text x="828" y="497" class="box-sub">FAISS + e5 embed.</text>
+  <text x="828" y="511" class="box-sub">cited STR rules</text>
+  <text x="828" y="525" class="box-sub">/regulatory_risk</text>
+
+  <!-- ───────── Layer 5: API ───────── -->
+  <rect class="layer" x="30" y="566" width="980" height="64"/>
+  <text x="46" y="586" class="layer-title">API  ·  FastAPI</text>
+  <rect class="box" x="46" y="594" width="948" height="28" fill="#eaf6f6" stroke="#5aa9a9"/>
+  <text x="520" y="613" text-anchor="middle" class="box-sub" font-weight="700" fill="#1d6f6f">11 live endpoints — predict_price · explain_price · estimate_occupancy · estimate_revenue · airbnb_vs_sell · scenario · comparables · regulatory_risk · chat · market_report · optimise</text>
+
+  <!-- ───────── Layer 6: UI ───────── -->
+  <rect class="layer" x="30" y="650" width="980" height="92"/>
+  <text x="46" y="670" class="layer-title">PRESENTATION</text>
+  <rect class="box" x="46" y="680" width="600" height="50" fill="#fef6e6" stroke="#e0c060"/>
+  <text x="60" y="700" class="box-title" fill="#9c7a16">React SPA  ⭐ primary</text>
+  <text x="60" y="717" class="box-sub">4 routes (New Analysis · Chat · Saved · Optimisation) + Copilot · Vite · Tailwind · TanStack Query · Zustand</text>
+  <rect class="box" x="660" y="680" width="334" height="50" fill="#f0f0f0" stroke="#b8b8b8"/>
+  <text x="674" y="700" class="box-title" fill="#666">Streamlit app  (legacy)</text>
+  <text x="674" y="717" class="box-sub">earlier 4-page UI, retained to show project progression</text>
+
+  <!-- ───────── Flow arrows (data → models → engine → agents → api → ui) ───────── -->
+  <path class="flow" d="M380,166 L380,184"/>
+  <path class="flow" d="M380,274 L380,304"/>
+  <path class="flow" d="M520,410 L520,428"/>
+  <path class="flow" d="M520,546 L520,564"/>
+  <path class="flow" d="M520,630 L520,648"/>
+  <!-- Gemini feeds the two LLM-backed agents (Market Analyst narration + chat,
+       Regulatory RAG answers), now the rightmost boxes. Straight down the right
+       channel with short drops — clear of the title and the central flow arrow. -->
+  <path class="conn" d="M965,166 L965,418 L790,418" stroke-dasharray="5,4"/>
+  <path class="flow" d="M790,418 L790,459" stroke-dasharray="5,4"/>
+  <path class="flow" d="M900,418 L900,459" stroke-dasharray="5,4"/>
+
+  <text x="1006" y="800" text-anchor="end" class="note">Cross-cutting: Governance guardrails + model cards apply to every agent response. CI: pytest + GitHub Actions.</text>
+</svg>

@@ -198,3 +198,49 @@ def test_monte_carlo_rejects_invalid_inputs():
             cost_kwargs={"property_value": 400_000.0},
             n_simulations=0,
         )
+    with pytest.raises(ValueError):
+        monte_carlo(
+            price_hat=150.0,
+            occ_hat=200.0,
+            years=10,
+            npv_sell_value=300_000.0,
+            cost_kwargs={"property_value": 400_000.0},
+            shock_prob=1.5,
+        )
+
+
+def test_monte_carlo_shock_prob_zero_matches_default():
+    """shock_prob=0 must reproduce the no-shock result exactly (back-compat)."""
+    kwargs = dict(
+        price_hat=150.0,
+        occ_hat=200.0,
+        years=10,
+        npv_sell_value=300_000.0,
+        cost_kwargs={"property_value": 400_000.0},
+        n_simulations=500,
+        random_state=42,
+    )
+    assert monte_carlo(**kwargs) == monte_carlo(**kwargs, shock_prob=0.0)
+
+
+def test_monte_carlo_shock_lowers_npv_and_p_airbnb():
+    """A regulatory shock truncates the Airbnb NOI stream, so it can only hurt:
+    P50 NPV and P(Airbnb > Sell) must both fall once shock_prob > 0, and
+    Barcelona's 0.20 must bite harder than Madrid's 0.08."""
+    base = dict(
+        price_hat=150.0,
+        occ_hat=200.0,
+        years=10,
+        npv_sell_value=300_000.0,
+        cost_kwargs={"property_value": 400_000.0},
+        n_simulations=2000,
+        random_state=42,
+    )
+    no_shock = monte_carlo(**base)
+    madrid = monte_carlo(**base, shock_prob=0.08)
+    barcelona = monte_carlo(**base, shock_prob=0.20)
+
+    assert madrid["p50"] < no_shock["p50"]
+    assert barcelona["p50"] < madrid["p50"]
+    assert madrid["p_airbnb_gt_sell"] <= no_shock["p_airbnb_gt_sell"]
+    assert barcelona["p_airbnb_gt_sell"] <= madrid["p_airbnb_gt_sell"]
